@@ -1,0 +1,23 @@
+@import "tailwindcss";
+
+@theme {
+  --color-background: #111318;
+  --color-surface: #1e2024;
+  --color-surface-high: #282a2e;
+  --color-primary: #00e5ff;
+  --color-primary-dim: #00daf3;
+}
+
+/* Glassmorphism utility */
+.glass-panel {
+  background: rgba(40, 42, 46, 0.4);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+  border-left: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+/* Base resets */
+body {
+  background-color: var(--color-background);
+}
