@@ -18,30 +18,39 @@ export async function GET() {
   const lastMonthYear = currentMonth === 0 ? currentYear - 1 : currentYear;
   
   // Fetch all data
-  const incomes = await Income.find({ userId });
+  const incomes = await Income.find({ userId, month: currentMonth, year: currentYear });
   const expenses = await Expense.find({ userId });
   const emis = await EMI.find({ userId });
   const cards = await Card.find({ userId });
   const banks = await Bank.find({ userId });
   
   // Calculate totals
-  const totalIncome = incomes.reduce((acc, curr) => acc + curr.amount, 0);
+  const totalIncome = incomes.reduce((acc, curr) => {
+    let val = curr.amount;
+    if (curr.frequency === 'Weekly') val *= 4.33;
+    else if (curr.frequency === 'Bi-weekly') val *= 2.16;
+    return acc + val;
+  }, 0);
   const totalExpense = expenses.reduce((acc, curr) => acc + curr.amount, 0);
   const totalEMI = emis.reduce((acc, curr) => (curr.remainingMonths > 0 ? acc + (curr.monthlyAmount || 0) : acc), 0);
   const totalCardDue = cards.reduce((acc, curr) => acc + curr.totalDue, 0);
   const totalBalance = banks.reduce((acc, curr) => acc + curr.balance, 0);
   
   // Current month expenses
+  const currentMonthStart = new Date(currentYear, currentMonth, 1);
+  const currentMonthEnd = new Date(currentYear, currentMonth + 1, 0, 23, 59, 59, 999);
   const currentMonthExpenses = expenses.filter(e => {
     const expDate = new Date(e.date);
-    return expDate.getMonth() === currentMonth && expDate.getFullYear() === currentYear;
+    return expDate >= currentMonthStart && expDate <= currentMonthEnd;
   });
   const currentMonthTotal = currentMonthExpenses.reduce((acc, curr) => acc + curr.amount, 0);
   
   // Last month expenses
+  const lastMonthStart = new Date(lastMonthYear, lastMonth, 1);
+  const lastMonthEnd = new Date(lastMonthYear, lastMonth + 1, 0, 23, 59, 59, 999);
   const lastMonthExpenses = expenses.filter(e => {
     const expDate = new Date(e.date);
-    return expDate.getMonth() === lastMonth && expDate.getFullYear() === lastMonthYear;
+    return expDate >= lastMonthStart && expDate <= lastMonthEnd;
   });
   const lastMonthTotal = lastMonthExpenses.reduce((acc, curr) => acc + curr.amount, 0);
   

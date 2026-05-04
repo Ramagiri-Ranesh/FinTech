@@ -29,12 +29,16 @@ export default function CardsPage() {
   // Edit Card Due Modal
   const [editCardModal, setEditCardModal] = useState<any>(null);
   const [editDueAmount, setEditDueAmount] = useState("");
+  const [editCreditLimit, setEditCreditLimit] = useState("");
+  const [editUsedLimit, setEditUsedLimit] = useState("");
 
   // Form State
   const [type, setType] = useState("Monthly");
   const [name, setName] = useState("");
   const [last6Digits, setLast6Digits] = useState("");
   const [totalDue, setTotalDue] = useState("");
+  const [creditLimit, setCreditLimit] = useState("");
+  const [usedLimit, setUsedLimit] = useState("");
   const [numberOfMonths, setNumberOfMonths] = useState("");
   const [monthlyAmount, setMonthlyAmount] = useState("");
 
@@ -65,12 +69,12 @@ export default function CardsPage() {
     if (!name || type === "Monthly" && last6Digits.length !== 6) return;
 
     const payload = type === "Monthly"
-      ? { type: "Monthly", name, last6Digits, totalDue: Number(totalDue) }
+      ? { type: "Monthly", name, last6Digits, totalDue: Number(totalDue), creditLimit: Number(creditLimit), usedLimit: Number(usedLimit) }
       : { type: "EMI", name, totalAmount: Number(totalDue), numberOfMonths: Number(numberOfMonths), monthlyAmount: Number(monthlyAmount), remainingMonths: Number(numberOfMonths), paidMonths: 0, currentMonth: 1 };
 
     await apiPost("/api/cards", payload);
 
-    setName(""); setLast6Digits(""); setTotalDue(""); setNumberOfMonths(""); setMonthlyAmount("");
+    setName(""); setLast6Digits(""); setTotalDue(""); setCreditLimit(""); setUsedLimit(""); setNumberOfMonths(""); setMonthlyAmount("");
     fetchData();
   };
 
@@ -113,11 +117,13 @@ export default function CardsPage() {
 
   const handleUpdateCardDue = async () => {
     if (!editCardModal) return;
-    
+
     await apiPut("/api/cards", {
       action: 'UPDATE_CARD_DUE',
       id: editCardModal._id,
-      totalDue: Number(editDueAmount)
+      totalDue: Number(editDueAmount),
+      creditLimit: Number(editCreditLimit),
+      usedLimit: Number(editUsedLimit),
     });
 
     setEditCardModal(null);
@@ -127,6 +133,8 @@ export default function CardsPage() {
   const openEditCardModal = (card: any) => {
     setEditCardModal(card);
     setEditDueAmount(card.totalDue.toString());
+    setEditCreditLimit((card.creditLimit || 0).toString());
+    setEditUsedLimit((card.usedLimit || 0).toString());
   };
 
   const openEmiDetailModal = (emi: any) => {
@@ -174,7 +182,7 @@ export default function CardsPage() {
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <label className="block text-xs text-[#bac9cc] mb-1">Total {type === "EMI" ? "Principal" : "Outstanding"}</label>
+                <label className="block text-xs text-[#bac9cc] mb-1">Total {type === "EMI" ? "Principal" : "Outstanding Due"}</label>
                 <input type="number" value={totalDue} onChange={e => setTotalDue(e.target.value)} placeholder="0.00" className="w-full bg-[#0c0e12] border border-[#3b494c] rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-[#00e5ff] text-white placeholder:text-[#3b494c]" required />
               </div>
               {type === "EMI" && (
@@ -183,7 +191,25 @@ export default function CardsPage() {
                   <input type="number" value={monthlyAmount} onChange={e => setMonthlyAmount(e.target.value)} placeholder="0.00" className="w-full bg-[#0c0e12] border border-[#3b494c] rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-[#fec931] text-white placeholder:text-[#3b494c]" required />
                 </div>
               )}
+              {type === "Monthly" && (
+                <div>
+                  <label className="block text-xs text-[#bac9cc] mb-1">Credit Limit (₹)</label>
+                  <input type="number" value={creditLimit} onChange={e => setCreditLimit(e.target.value)} placeholder="100000" className="w-full bg-[#0c0e12] border border-[#3b494c] rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-[#00e5ff] text-white placeholder:text-[#3b494c]" />
+                </div>
+              )}
             </div>
+
+            {type === "Monthly" && (
+              <div>
+                <label className="block text-xs text-[#bac9cc] mb-1">Used Limit (₹) — optional</label>
+                <input type="number" value={usedLimit} onChange={e => setUsedLimit(e.target.value)} placeholder="0.00" className="w-full bg-[#0c0e12] border border-[#3b494c] rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-[#00e5ff] text-white placeholder:text-[#3b494c]" />
+                {creditLimit && usedLimit && Number(creditLimit) > 0 && (
+                  <p className="text-xs text-[#00e5ff] mt-1">
+                    Remaining: {new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(Math.max(0, Number(creditLimit) - Number(usedLimit)))}
+                  </p>
+                )}
+              </div>
+            )}
 
             <button type="submit" className="w-full mt-4 bg-gradient-to-r from-[#c3f5ff] to-[#00e5ff] text-[#001f24] font-medium py-3 rounded-xl hover:opacity-90 flex items-center justify-center gap-2">
               <Plus size={18} /> Register {type}
@@ -289,10 +315,33 @@ export default function CardsPage() {
               <div key={c._id} className="relative overflow-hidden bg-gradient-to-br from-[#1a1c20] to-[#111318] p-6 rounded-2xl border border-[#3b494c] shadow-lg">
                 <div className="absolute top-0 right-0 p-4 opacity-50"><CreditCard size={32} /></div>
                 <h4 className="text-lg font-medium text-white mb-1">{c.name}</h4>
-                <p className="text-[#849396] text-sm tracking-[0.2em] mb-6">•••• •••• {c.last6Digits}</p>
+                <p className="text-[#849396] text-sm tracking-[0.2em] mb-4">•••• •••• {c.last6Digits}</p>
+
+                {/* Credit Limit Bar */}
+                {c.creditLimit > 0 && (
+                  <div className="mb-4">
+                    <div className="flex justify-between text-xs text-[#849396] mb-1">
+                      <span>Used: {new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(c.usedLimit || 0)}</span>
+                      <span>Limit: {new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(c.creditLimit)}</span>
+                    </div>
+                    <div className="h-2 w-full bg-[#111318] rounded-full overflow-hidden">
+                      <div
+                        className="h-full rounded-full transition-all"
+                        style={{
+                          width: `${Math.min(100, ((c.usedLimit || 0) / c.creditLimit) * 100)}%`,
+                          background: ((c.usedLimit || 0) / c.creditLimit) > 0.8 ? '#ffb4ab' : '#00e5ff',
+                        }}
+                      />
+                    </div>
+                    <p className="text-xs mt-1 text-[#00e5ff]">
+                      Remaining: {new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(Math.max(0, c.creditLimit - (c.usedLimit || 0)))}
+                    </p>
+                  </div>
+                )}
+
                 <div className="flex flex-col md:flex-row w-full justify-between md:items-end gap-3 mt-4">
                   <div>
-                    <p className="text-xs text-[#bac9cc]">Total Outstanding</p>
+                    <p className="text-xs text-[#bac9cc]">Total Outstanding Due</p>
                     <p className="text-2xl font-[Manrope] font-bold text-[#ffb4ab]">{formatINR(c.totalDue)}</p>
                   </div>
                   <div className="flex flex-wrap gap-2">
@@ -533,25 +582,52 @@ export default function CardsPage() {
 
               <h3 className="text-xl font-[Manrope] font-bold text-white mb-2">Update Card Billing</h3>
               <p className="text-sm text-[#bac9cc] mb-8">
-                Edit monthly billing amount for {editCardModal.name} (••{editCardModal.last6Digits})
+                Edit billing details for {editCardModal.name} (••{editCardModal.last6Digits})
               </p>
 
               <div className="space-y-6">
                 <div>
-                  <label className="block text-xs font-semibold text-[#849396] uppercase tracking-widest mb-3">New Total Due Amount (₹)</label>
-                  <input 
-                    type="number" 
-                    autoFocus 
-                    value={editDueAmount} 
-                    onChange={e => setEditDueAmount(e.target.value)} 
-                    placeholder="Enter new billing amount..." 
-                    className="w-full bg-[#0c0e12] border border-[#00e5ff] rounded-xl px-4 py-4 text-lg focus:outline-none text-white placeholder:text-[#3b494c]" 
+                  <label className="block text-xs font-semibold text-[#849396] uppercase tracking-widest mb-3">Total Due Amount (₹)</label>
+                  <input
+                    type="number"
+                    autoFocus
+                    value={editDueAmount}
+                    onChange={e => setEditDueAmount(e.target.value)}
+                    placeholder="Enter outstanding amount..."
+                    className="w-full bg-[#0c0e12] border border-[#00e5ff] rounded-xl px-4 py-4 text-lg focus:outline-none text-white placeholder:text-[#3b494c]"
                   />
-                  <p className="text-xs text-[#849396] mt-2">This will replace the current outstanding amount of {formatINR(editCardModal.totalDue)}</p>
+                  <p className="text-xs text-[#849396] mt-2">Current: {formatINR(editCardModal.totalDue)}</p>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-[#849396] uppercase tracking-widest mb-3">Credit Limit (₹)</label>
+                  <input
+                    type="number"
+                    value={editCreditLimit}
+                    onChange={e => setEditCreditLimit(e.target.value)}
+                    placeholder="e.g. 100000"
+                    className="w-full bg-[#0c0e12] border border-[#3b494c] rounded-xl px-4 py-4 text-lg focus:outline-none focus:border-[#00e5ff] text-white placeholder:text-[#3b494c]"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-[#849396] uppercase tracking-widest mb-3">Used Limit (₹)</label>
+                  <input
+                    type="number"
+                    value={editUsedLimit}
+                    onChange={e => setEditUsedLimit(e.target.value)}
+                    placeholder="0.00"
+                    className="w-full bg-[#0c0e12] border border-[#3b494c] rounded-xl px-4 py-4 text-lg focus:outline-none focus:border-[#00e5ff] text-white placeholder:text-[#3b494c]"
+                  />
+                  {editCreditLimit && editUsedLimit && Number(editCreditLimit) > 0 && (
+                    <p className="text-xs text-[#00e5ff] mt-2">
+                      Remaining Limit: {new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(Math.max(0, Number(editCreditLimit) - Number(editUsedLimit)))}
+                    </p>
+                  )}
                 </div>
 
                 <button onClick={handleUpdateCardDue} className="w-full bg-gradient-to-r from-[#00e5ff] to-[#00b4c8] text-[#001f24] font-bold py-4 rounded-xl hover:opacity-90 flex items-center justify-center gap-2 shadow-[0_0_30px_rgba(0,229,255,0.3)]">
-                  <Check size={20} /> Update Billing Amount
+                  <Check size={20} /> Update Card Details
                 </button>
               </div>
             </motion.div>

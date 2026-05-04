@@ -13,6 +13,8 @@ const IncomeSchema = new Schema({
   amount: { type: Number, required: true },
   frequency: { type: String, enum: ['Monthly', 'Weekly', 'Bi-weekly', 'One-time'], default: 'Monthly' },
   date: { type: Date, default: Date.now },
+  month: { type: Number }, // 0-11
+  year: { type: Number },
 }, { timestamps: true });
 
 const ExpenseSchema = new Schema({
@@ -29,6 +31,8 @@ const CardSchema = new Schema({
   name: { type: String, required: true },
   last6Digits: { type: String, required: true },
   totalDue: { type: Number, default: 0 },
+  creditLimit: { type: Number, default: 0 },
+  usedLimit: { type: Number, default: 0 },
   type: { type: String, enum: ['EMI', 'Monthly'], default: 'Monthly' },
   billingDate: { type: Number, default: 1 },
   lastBillingUpdate: { type: Date },

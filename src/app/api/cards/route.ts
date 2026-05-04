@@ -43,6 +43,8 @@ export async function PUT(req: Request) {
     const card = await Card.findOne({ _id: body.id, userId: session.user.id });
     if (card) {
       card.totalDue = Number(body.totalDue);
+      if (body.usedLimit !== undefined) card.usedLimit = Number(body.usedLimit);
+      if (body.creditLimit !== undefined) card.creditLimit = Number(body.creditLimit);
       card.lastBillingUpdate = new Date();
       await card.save();
       return NextResponse.json({ success: true, card });
