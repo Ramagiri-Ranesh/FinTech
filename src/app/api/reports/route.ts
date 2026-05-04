@@ -21,7 +21,15 @@ export async function GET(req: Request) {
   const endDate = new Date(year, month + 1, 0, 23, 59, 59, 999);
 
   // Fetch month-specific data
-  const incomes = await Income.find({ userId, month, year });
+  // Support both new records (with month/year fields) and old records (date-range fallback)
+  const incomes = await Income.find({
+    userId,
+    $or: [
+      { month, year },
+      { month: { $exists: false }, date: { $gte: startDate, $lte: endDate } },
+      { month: null, date: { $gte: startDate, $lte: endDate } },
+    ],
+  });
   const expenses = await Expense.find({ userId, date: { $gte: startDate, $lte: endDate } }).sort({ date: -1 });
   const emis = await EMI.find({ userId });
   const cards = await Card.find({ userId });
@@ -104,17 +112,57 @@ export async function GET(req: Request) {
     frequency: i.frequency,
   }));
 
-  // EMI breakdown for PDF
+  // EMI breakdown for PDF — include payments made this month
   const emiBreakdown = emis
-    .filter(e => e.remainingMonths > 0)
-    .map(e => ({
-      name: e.name,
-      monthlyAmount: e.monthlyAmount,
-      remainingMonths: e.remainingMonths,
-      totalAmount: e.totalAmount,
-      paidMonths: e.paidMonths,
-      numberOfMonths: e.numberOfMonths,
-    }));
+    .filter(e => e.remainingMonths > 0 || e.paidMonths > 0)
+    .map(e => {
+      // Payments made in the selected month
+      const monthPayments = (e.paymentHistory || []).filter((p: any) => {
+        const d = new Date(p.date);
+        return d.getMonth() === month && d.getFullYear() === year;
+      });
+      const paidThisMonth = monthPayments.reduce((acc: number, p: any) => acc + (p.amount || 0), 0);
+
+      return {
+        name: e.name,
+        monthlyAmount: e.monthlyAmount,
+        remainingMonths: e.remainingMonths,
+        totalAmount: e.totalAmount,
+        paidMonths: e.paidMonths,
+        numberOfMonths: e.numberOfMonths,
+        paidThisMonth,
+        monthPayments: monthPayments.map((p: any) => ({
+          month: p.month,
+          amount: p.amount,
+          date: p.date,
+          paymentSource: p.paymentSource || 'other',
+          notes: p.notes || '',
+        })),
+      };
+    });
+
+  // Card breakdown for PDF — include payments made this month
+  const cardBreakdown = cards.map(c => {
+    const monthPayments = (c.paymentHistory || []).filter((p: any) => {
+      const d = new Date(p.date);
+      return d.getMonth() === month && d.getFullYear() === year;
+    });
+    const paidThisMonth = monthPayments.reduce((acc: number, p: any) => acc + (p.amount || 0), 0);
+
+    return {
+      name: c.name,
+      last6Digits: c.last6Digits,
+      totalDue: c.totalDue,
+      creditLimit: c.creditLimit || 0,
+      usedLimit: c.usedLimit || 0,
+      paidThisMonth,
+      monthPayments: monthPayments.map((p: any) => ({
+        amount: p.amount,
+        date: p.date,
+        notes: p.notes || '',
+      })),
+    };
+  });
 
   // Expense list for PDF
   const expenseList = expenses.map(e => ({
@@ -141,6 +189,7 @@ export async function GET(req: Request) {
     monthlyData,
     incomeBreakdown,
     emiBreakdown,
+    cardBreakdown,
     expenseList,
   });
 }

@@ -19,10 +19,17 @@ export async function GET(req: Request) {
   const year = yearParam !== null ? Number(yearParam) : now.getFullYear();
 
   // Filter incomes by month/year
+  // Support both new records (with month/year fields) and old records (date-range fallback)
+  const startDate = new Date(year, month, 1);
+  const endDate = new Date(year, month + 1, 0, 23, 59, 59, 999);
+
   const data = await Income.find({
     userId: session.user.id,
-    month,
-    year,
+    $or: [
+      { month, year },
+      { month: { $exists: false }, date: { $gte: startDate, $lte: endDate } },
+      { month: null, date: { $gte: startDate, $lte: endDate } },
+    ],
   }).sort({ date: -1 });
 
   return NextResponse.json(data);

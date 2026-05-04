@@ -16,9 +16,22 @@ export async function GET() {
   const currentYear = now.getFullYear();
   const lastMonth = currentMonth === 0 ? 11 : currentMonth - 1;
   const lastMonthYear = currentMonth === 0 ? currentYear - 1 : currentYear;
-  
+
+  // Date ranges
+  const currentMonthStart = new Date(currentYear, currentMonth, 1);
+  const currentMonthEnd = new Date(currentYear, currentMonth + 1, 0, 23, 59, 59, 999);
+  const lastMonthStart = new Date(lastMonthYear, lastMonth, 1);
+  const lastMonthEnd = new Date(lastMonthYear, lastMonth + 1, 0, 23, 59, 59, 999);
+
   // Fetch all data
-  const incomes = await Income.find({ userId, month: currentMonth, year: currentYear });
+  const incomes = await Income.find({
+    userId,
+    $or: [
+      { month: currentMonth, year: currentYear },
+      { month: { $exists: false }, date: { $gte: currentMonthStart, $lte: currentMonthEnd } },
+      { month: null, date: { $gte: currentMonthStart, $lte: currentMonthEnd } },
+    ],
+  });
   const expenses = await Expense.find({ userId });
   const emis = await EMI.find({ userId });
   const cards = await Card.find({ userId });
@@ -37,8 +50,6 @@ export async function GET() {
   const totalBalance = banks.reduce((acc, curr) => acc + curr.balance, 0);
   
   // Current month expenses
-  const currentMonthStart = new Date(currentYear, currentMonth, 1);
-  const currentMonthEnd = new Date(currentYear, currentMonth + 1, 0, 23, 59, 59, 999);
   const currentMonthExpenses = expenses.filter(e => {
     const expDate = new Date(e.date);
     return expDate >= currentMonthStart && expDate <= currentMonthEnd;
@@ -46,8 +57,6 @@ export async function GET() {
   const currentMonthTotal = currentMonthExpenses.reduce((acc, curr) => acc + curr.amount, 0);
   
   // Last month expenses
-  const lastMonthStart = new Date(lastMonthYear, lastMonth, 1);
-  const lastMonthEnd = new Date(lastMonthYear, lastMonth + 1, 0, 23, 59, 59, 999);
   const lastMonthExpenses = expenses.filter(e => {
     const expDate = new Date(e.date);
     return expDate >= lastMonthStart && expDate <= lastMonthEnd;

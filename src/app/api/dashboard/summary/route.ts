@@ -20,7 +20,14 @@ export async function GET() {
   const endDate = new Date(currentYear, currentMonth + 1, 0, 23, 59, 59, 999);
 
   // Fetch current month data
-  const incomes = await Income.find({ userId, month: currentMonth, year: currentYear });
+  const incomes = await Income.find({
+    userId,
+    $or: [
+      { month: currentMonth, year: currentYear },
+      { month: { $exists: false }, date: { $gte: startDate, $lte: endDate } },
+      { month: null, date: { $gte: startDate, $lte: endDate } },
+    ],
+  });
   const expenses = await Expense.find({ userId, date: { $gte: startDate, $lte: endDate } });
   const emis = await EMI.find({ userId });
   const cards = await Card.find({ userId });
@@ -52,7 +59,14 @@ export async function GET() {
     const mStart = new Date(y, m, 1);
     const mEnd = new Date(y, m + 1, 0, 23, 59, 59, 999);
 
-    const mIncomes = await Income.find({ userId, month: m, year: y });
+    const mIncomes = await Income.find({
+      userId,
+      $or: [
+        { month: m, year: y },
+        { month: { $exists: false }, date: { $gte: mStart, $lte: mEnd } },
+        { month: null, date: { $gte: mStart, $lte: mEnd } },
+      ],
+    });
     const mExpenses = await Expense.find({ userId, date: { $gte: mStart, $lte: mEnd } });
 
     const mIncome = mIncomes.reduce((acc, curr) => {

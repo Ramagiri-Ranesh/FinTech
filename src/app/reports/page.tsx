@@ -53,7 +53,6 @@ export default function ReportsPage() {
   const handleDownloadPDF = () => {
     if (!data) return;
 
-    // Build HTML content for the PDF
     const fmt = (n: number) => new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(n);
 
     const incomeRows = (data.incomeBreakdown || []).map((i: any) =>
@@ -64,15 +63,93 @@ export default function ReportsPage() {
       `<tr><td>${new Date(e.date).toLocaleDateString('en-IN')}</td><td>${e.category}</td><td>${e.notes || '-'}</td><td style="text-align:right">${fmt(e.amount)}</td></tr>`
     ).join('');
 
-    const emiRows = (data.emiBreakdown || []).map((e: any) =>
-      `<tr><td>${e.name}</td><td>${e.paidMonths}/${e.numberOfMonths}</td><td>${e.remainingMonths}</td><td style="text-align:right">${fmt(e.monthlyAmount)}</td></tr>`
-    ).join('');
-
     const categoryRows = (data.categories || []).map((c: any) =>
       `<tr><td>${c.name}</td><td style="text-align:right">${fmt(c.value)}</td></tr>`
     ).join('');
 
     const insightsList = (data.insights || []).map((i: string) => `<li>${i}</li>`).join('');
+
+    // Credit card sections — one block per card
+    const cardSections = (data.cardBreakdown || []).map((c: any) => {
+      const txRows = (c.monthPayments || []).map((p: any) =>
+        `<tr>
+          <td>${new Date(p.date).toLocaleDateString('en-IN')}</td>
+          <td>${p.notes || '—'}</td>
+          <td style="text-align:right;color:#006">${fmt(p.amount)}</td>
+        </tr>`
+      ).join('');
+
+      const limitBar = c.creditLimit > 0
+        ? `<div style="margin:8px 0 4px">
+            <div style="display:flex;justify-content:space-between;font-size:11px;color:#666;margin-bottom:4px">
+              <span>Used: ${fmt(c.usedLimit || 0)}</span>
+              <span>Limit: ${fmt(c.creditLimit)}</span>
+            </div>
+            <div style="background:#eee;border-radius:4px;height:8px">
+              <div style="background:${((c.usedLimit || 0) / c.creditLimit) > 0.8 ? '#c00' : '#007bff'};height:8px;border-radius:4px;width:${Math.min(100, Math.round(((c.usedLimit || 0) / c.creditLimit) * 100))}%"></div>
+            </div>
+            <div style="font-size:11px;color:#007;margin-top:3px">Remaining: ${fmt(Math.max(0, c.creditLimit - (c.usedLimit || 0)))}</div>
+          </div>`
+        : '';
+
+      return `
+        <div class="card-block">
+          <div class="card-header">
+            <span class="card-name">${c.name}</span>
+            <span class="card-digits">•••• •••• ${c.last6Digits}</span>
+          </div>
+          ${limitBar}
+          <div class="card-meta">
+            <span>Outstanding Due: <strong style="color:#c00">${fmt(c.totalDue)}</strong></span>
+            <span>Paid This Month: <strong style="color:#006">${fmt(c.paidThisMonth)}</strong></span>
+          </div>
+          ${txRows
+            ? `<table style="margin-top:10px"><thead><tr><th>Date</th><th>Notes</th><th>Amount Paid</th></tr></thead><tbody>${txRows}</tbody></table>`
+            : '<p style="color:#999;font-size:12px;margin-top:8px">No payments made this month.</p>'
+          }
+        </div>`;
+    }).join('');
+
+    // EMI sections — one block per EMI
+    const emiSections = (data.emiBreakdown || []).map((e: any) => {
+      const txRows = (e.monthPayments || []).map((p: any) =>
+        `<tr>
+          <td>${new Date(p.date).toLocaleDateString('en-IN')}</td>
+          <td>Month ${p.month}</td>
+          <td>${p.paymentSource || 'other'}</td>
+          <td>${p.notes || '—'}</td>
+          <td style="text-align:right;color:#006">${fmt(p.amount)}</td>
+        </tr>`
+      ).join('');
+
+      const progress = e.numberOfMonths > 0 ? Math.round((e.paidMonths / e.numberOfMonths) * 100) : 0;
+
+      return `
+        <div class="card-block">
+          <div class="card-header">
+            <span class="card-name">${e.name}</span>
+            <span class="card-digits">${e.paidMonths}/${e.numberOfMonths} months</span>
+          </div>
+          <div style="margin:8px 0 4px">
+            <div style="display:flex;justify-content:space-between;font-size:11px;color:#666;margin-bottom:4px">
+              <span>Paid: ${e.paidMonths} months</span>
+              <span>Remaining: ${e.remainingMonths} months</span>
+            </div>
+            <div style="background:#eee;border-radius:4px;height:8px">
+              <div style="background:#f0a500;height:8px;border-radius:4px;width:${progress}%"></div>
+            </div>
+          </div>
+          <div class="card-meta">
+            <span>Monthly EMI: <strong>${fmt(e.monthlyAmount)}</strong></span>
+            <span>Total Principal: <strong>${fmt(e.totalAmount)}</strong></span>
+            <span>Paid This Month: <strong style="color:#006">${fmt(e.paidThisMonth)}</strong></span>
+          </div>
+          ${txRows
+            ? `<table style="margin-top:10px"><thead><tr><th>Date</th><th>Installment</th><th>Source</th><th>Notes</th><th>Amount</th></tr></thead><tbody>${txRows}</tbody></table>`
+            : '<p style="color:#999;font-size:12px;margin-top:8px">No EMI payments made this month.</p>'
+          }
+        </div>`;
+    }).join('');
 
     const html = `<!DOCTYPE html>
 <html>
@@ -85,7 +162,7 @@ export default function ReportsPage() {
   h1 { font-size: 28px; color: #001f24; margin-bottom: 4px; }
   .subtitle { color: #666; font-size: 14px; margin-bottom: 32px; }
   .section { margin-bottom: 32px; }
-  h2 { font-size: 18px; color: #001f24; border-bottom: 2px solid #00e5ff; padding-bottom: 6px; margin-bottom: 16px; }
+  h2 { font-size: 18px; color: #001f24; border-bottom: 2px solid #00b4c8; padding-bottom: 6px; margin-bottom: 16px; }
   .kpi-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 32px; }
   .kpi { background: #f0fdff; border: 1px solid #b2f0ff; border-radius: 12px; padding: 16px; }
   .kpi-label { font-size: 11px; color: #666; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 4px; }
@@ -98,8 +175,13 @@ export default function ReportsPage() {
   tr:nth-child(even) td { background: #f9f9f9; }
   ul { padding-left: 20px; }
   li { margin-bottom: 6px; font-size: 13px; color: #333; }
+  .card-block { border: 1px solid #ddd; border-radius: 10px; padding: 16px; margin-bottom: 16px; background: #fafafa; }
+  .card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+  .card-name { font-size: 16px; font-weight: bold; color: #001f24; }
+  .card-digits { font-size: 13px; color: #888; letter-spacing: 0.1em; }
+  .card-meta { display: flex; gap: 24px; flex-wrap: wrap; font-size: 13px; color: #444; margin: 8px 0; }
   .footer { margin-top: 40px; font-size: 11px; color: #999; text-align: center; }
-  @media print { body { padding: 20px; } }
+  @media print { body { padding: 20px; } .card-block { break-inside: avoid; } }
 </style>
 </head>
 <body>
@@ -131,8 +213,13 @@ export default function ReportsPage() {
 </div>
 
 <div class="section">
-  <h2>Active EMI Obligations</h2>
-  ${emiRows ? `<table><thead><tr><th>Name</th><th>Progress</th><th>Remaining Months</th><th>Monthly EMI</th></tr></thead><tbody>${emiRows}</tbody></table>` : '<p style="color:#999;font-size:13px">No active EMIs.</p>'}
+  <h2>Credit Cards — Payments & Status</h2>
+  ${cardSections || '<p style="color:#999;font-size:13px">No credit cards tracked.</p>'}
+</div>
+
+<div class="section">
+  <h2>EMI — Payments & Progress</h2>
+  ${emiSections || '<p style="color:#999;font-size:13px">No active EMIs.</p>'}
 </div>
 
 <div class="section">
@@ -303,27 +390,124 @@ export default function ReportsPage() {
           <h3 className="text-lg font-medium mb-6 text-white flex items-center gap-2">
             <FileText size={20} className="text-[#fec931]" /> Active EMI Obligations
           </h3>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-[#3b494c]">
-                  <th className="text-left text-[#849396] font-medium pb-3">Name</th>
-                  <th className="text-left text-[#849396] font-medium pb-3">Progress</th>
-                  <th className="text-left text-[#849396] font-medium pb-3">Remaining</th>
-                  <th className="text-right text-[#849396] font-medium pb-3">Monthly EMI</th>
-                </tr>
-              </thead>
-              <tbody>
-                {data.emiBreakdown.map((emi: any, i: number) => (
-                  <tr key={i} className="border-b border-[#3b494c]/30">
-                    <td className="py-3 text-white">{emi.name}</td>
-                    <td className="py-3 text-[#bac9cc]">{emi.paidMonths}/{emi.numberOfMonths} months</td>
-                    <td className="py-3 text-[#fec931]">{emi.remainingMonths} months</td>
-                    <td className="py-3 text-right text-[#fec931] font-[Manrope] font-bold">{formatINR(emi.monthlyAmount)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div className="flex flex-col gap-4">
+            {data.emiBreakdown.map((emi: any, i: number) => {
+              const progress = emi.numberOfMonths > 0 ? Math.round((emi.paidMonths / emi.numberOfMonths) * 100) : 0;
+              return (
+                <div key={i} className="bg-[#0c0e12] border border-[#3b494c]/50 rounded-xl p-5">
+                  <div className="flex flex-col md:flex-row justify-between md:items-center gap-2 mb-3">
+                    <div>
+                      <p className="text-white font-medium">{emi.name}</p>
+                      <p className="text-xs text-[#849396] mt-0.5">{emi.paidMonths}/{emi.numberOfMonths} months &nbsp;·&nbsp; {emi.remainingMonths} remaining</p>
+                    </div>
+                    <div className="flex gap-6 text-sm">
+                      <div>
+                        <p className="text-[10px] text-[#849396] uppercase tracking-widest">Monthly EMI</p>
+                        <p className="text-[#fec931] font-[Manrope] font-bold">{formatINR(emi.monthlyAmount)}</p>
+                      </div>
+                      <div>
+                        <p className="text-[10px] text-[#849396] uppercase tracking-widest">Paid This Month</p>
+                        <p className="text-[#00e5ff] font-[Manrope] font-bold">{formatINR(emi.paidThisMonth)}</p>
+                      </div>
+                    </div>
+                  </div>
+                  {/* Progress bar */}
+                  <div className="h-1.5 w-full bg-[#1e2024] rounded-full overflow-hidden mb-3">
+                    <div className="h-full bg-[#fec931] rounded-full" style={{ width: `${progress}%` }} />
+                  </div>
+                  {/* This month's payments */}
+                  {emi.monthPayments && emi.monthPayments.length > 0 ? (
+                    <div className="mt-3 border-t border-[#3b494c]/30 pt-3">
+                      <p className="text-[10px] text-[#849396] uppercase tracking-widest mb-2">Payments This Month</p>
+                      <div className="flex flex-col gap-2">
+                        {emi.monthPayments.map((p: any, j: number) => (
+                          <div key={j} className="flex justify-between items-center text-sm">
+                            <div className="flex items-center gap-3">
+                              <span className="text-[#849396]">{new Date(p.date).toLocaleDateString('en-IN')}</span>
+                              <span className="text-[#bac9cc]">Month {p.month}</span>
+                              <span className="text-xs text-[#849396] capitalize">{p.paymentSource}</span>
+                              {p.notes && <span className="text-xs text-[#849396]">— {p.notes}</span>}
+                            </div>
+                            <span className="text-[#00e5ff] font-[Manrope] font-bold">{formatINR(p.amount)}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ) : (
+                    <p className="text-xs text-[#849396] mt-2">No payments made this month.</p>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </motion.div>
+      )}
+
+      {/* Credit Card Breakdown Table */}
+      {data.cardBreakdown && data.cardBreakdown.some((c: any) => c.totalDue > 0 || c.paidThisMonth > 0) && (
+        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="glass-panel p-5 md:p-8 rounded-2xl mb-8">
+          <h3 className="text-lg font-medium mb-6 text-white flex items-center gap-2">
+            <FileText size={20} className="text-[#ffb4ab]" /> Credit Cards — Payments & Status
+          </h3>
+          <div className="flex flex-col gap-4">
+            {data.cardBreakdown.map((c: any, i: number) => (
+              <div key={i} className="bg-[#0c0e12] border border-[#3b494c]/50 rounded-xl p-5">
+                <div className="flex flex-col md:flex-row justify-between md:items-center gap-2 mb-3">
+                  <div>
+                    <p className="text-white font-medium">{c.name}</p>
+                    <p className="text-xs text-[#849396] tracking-widest mt-0.5">•••• •••• {c.last6Digits}</p>
+                  </div>
+                  <div className="flex gap-6 text-sm">
+                    <div>
+                      <p className="text-[10px] text-[#849396] uppercase tracking-widest">Outstanding Due</p>
+                      <p className="text-[#ffb4ab] font-[Manrope] font-bold">{formatINR(c.totalDue)}</p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] text-[#849396] uppercase tracking-widest">Paid This Month</p>
+                      <p className="text-[#00e5ff] font-[Manrope] font-bold">{formatINR(c.paidThisMonth)}</p>
+                    </div>
+                  </div>
+                </div>
+                {/* Credit limit bar */}
+                {c.creditLimit > 0 && (
+                  <div className="mb-3">
+                    <div className="flex justify-between text-[10px] text-[#849396] mb-1">
+                      <span>Used: {formatINR(c.usedLimit || 0)}</span>
+                      <span>Limit: {formatINR(c.creditLimit)}</span>
+                    </div>
+                    <div className="h-1.5 w-full bg-[#1e2024] rounded-full overflow-hidden">
+                      <div
+                        className="h-full rounded-full transition-all"
+                        style={{
+                          width: `${Math.min(100, Math.round(((c.usedLimit || 0) / c.creditLimit) * 100))}%`,
+                          background: ((c.usedLimit || 0) / c.creditLimit) > 0.8 ? '#ffb4ab' : '#00e5ff',
+                        }}
+                      />
+                    </div>
+                    <p className="text-[10px] text-[#00e5ff] mt-1">Remaining: {formatINR(Math.max(0, c.creditLimit - (c.usedLimit || 0)))}</p>
+                  </div>
+                )}
+                {/* This month's payments */}
+                {c.monthPayments && c.monthPayments.length > 0 ? (
+                  <div className="mt-3 border-t border-[#3b494c]/30 pt-3">
+                    <p className="text-[10px] text-[#849396] uppercase tracking-widest mb-2">Payments This Month</p>
+                    <div className="flex flex-col gap-2">
+                      {c.monthPayments.map((p: any, j: number) => (
+                        <div key={j} className="flex justify-between items-center text-sm">
+                          <div className="flex items-center gap-3">
+                            <span className="text-[#849396]">{new Date(p.date).toLocaleDateString('en-IN')}</span>
+                            {p.notes && <span className="text-xs text-[#849396]">— {p.notes}</span>}
+                          </div>
+                          <span className="text-[#00e5ff] font-[Manrope] font-bold">{formatINR(p.amount)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : (
+                  <p className="text-xs text-[#849396] mt-2">No payments made this month.</p>
+                )}
+              </div>
+            ))}
           </div>
         </motion.div>
       )}
