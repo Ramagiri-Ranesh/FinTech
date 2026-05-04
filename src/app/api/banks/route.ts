@@ -7,22 +7,74 @@ import { Bank, BankTransaction } from "@/lib/models";
 export async function GET(req: Request) {
   const session = await getServerSession(authOptions);
   if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  
+
   const { searchParams } = new URL(req.url);
   const bankId = searchParams.get('bankId');
   const action = searchParams.get('action');
-  
+
   await connectToDatabase();
-  
-  // Get transactions for a specific bank
+
+  // Get transactions for a specific bank — optionally filtered by month/year
   if (action === 'transactions' && bankId) {
-    const transactions = await BankTransaction.find({ 
-      userId: session.user.id, 
-      bankId 
-    }).sort({ date: -1 });
-    return NextResponse.json(transactions);
+    const monthParam = searchParams.get('month');
+    const yearParam = searchParams.get('year');
+
+    let query: any = { userId: session.user.id, bankId };
+
+    if (monthParam !== null && yearParam !== null) {
+      const month = Number(monthParam);
+      const year = Number(yearParam);
+      const startDate = new Date(year, month, 1);
+      const endDate = new Date(year, month + 1, 0, 23, 59, 59, 999);
+      query.date = { $gte: startDate, $lte: endDate };
+    }
+
+    const transactions = await BankTransaction.find(query).sort({ date: -1 });
+
+    // If month filter is active, also compute opening balance
+    // (balance before the start of that month = current balance minus all txns from that month onwards)
+    let openingBalance: number | null = null;
+    if (monthParam !== null && yearParam !== null) {
+      const month = Number(monthParam);
+      const year = Number(yearParam);
+      const startDate = new Date(year, month, 1);
+
+      // All transactions from startDate onwards (this month + future)
+      const txnsFromStart = await BankTransaction.find({
+        userId: session.user.id,
+        bankId,
+        date: { $gte: startDate },
+      });
+
+      const bank = await Bank.findOne({ _id: bankId, userId: session.user.id });
+      if (bank) {
+        // Reverse-calculate: opening = current balance - net of all txns from start
+        const netFromStart = txnsFromStart.reduce((acc: number, t: any) => {
+          return t.type === 'credit' ? acc + t.amount : acc - t.amount;
+        }, 0);
+        openingBalance = Math.round(bank.balance - netFromStart);
+      }
+
+      // Monthly summary
+      const totalCredits = transactions.filter((t: any) => t.type === 'credit').reduce((acc: number, t: any) => acc + t.amount, 0);
+      const totalDebits = transactions.filter((t: any) => t.type === 'debit').reduce((acc: number, t: any) => acc + t.amount, 0);
+      const closingBalance = openingBalance !== null ? openingBalance + totalCredits - totalDebits : null;
+
+      return NextResponse.json({
+        transactions,
+        summary: {
+          openingBalance,
+          closingBalance,
+          totalCredits: Math.round(totalCredits),
+          totalDebits: Math.round(totalDebits),
+          txnCount: transactions.length,
+        },
+      });
+    }
+
+    return NextResponse.json({ transactions, summary: null });
   }
-  
+
   // Get all banks
   const data = await Bank.find({ userId: session.user.id }).sort({ createdAt: -1 });
   return NextResponse.json(data);

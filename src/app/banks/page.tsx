@@ -3,16 +3,21 @@
 import { useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Plus, Trash2, Landmark, ShieldCheck, TrendingUp, TrendingDown, X, Check, ChevronDown, ChevronUp, DollarSign, Calendar, Filter } from "lucide-react";
+import { Plus, Trash2, Landmark, ShieldCheck, TrendingUp, TrendingDown, X, Check, ChevronDown, ChevronUp, DollarSign, Calendar, ChevronLeft, ChevronRight } from "lucide-react";
 import { formatINR } from "@/lib/utils";
 import { apiGet, apiPost, apiPut, apiDelete } from "@/lib/api";
-import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, LineChart, Line, XAxis, YAxis, BarChart, Bar, Legend } from "recharts";
+import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, BarChart, Bar, XAxis, YAxis, Legend } from "recharts";
+
+const MONTH_NAMES = [
+  "January","February","March","April","May","June",
+  "July","August","September","October","November","December"
+];
 
 export default function BanksPage() {
   const { data: session } = useSession();
   const [banks, setBanks] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  
+
   const [name, setName] = useState("");
   const [last4Digits, setLast4Digits] = useState("");
   const [balance, setBalance] = useState("");
@@ -23,39 +28,47 @@ export default function BanksPage() {
   const [transNote, setTransNote] = useState("");
   const [transDate, setTransDate] = useState(() => new Date().toISOString().split("T")[0]);
 
-  // Expanded bank state
+  // Expanded bank state — per-bank month view
   const [expandedBank, setExpandedBank] = useState<string | null>(null);
   const [bankTransactions, setBankTransactions] = useState<any[]>([]);
+  const [monthlySummary, setMonthlySummary] = useState<any>(null);
   const [transFilter, setTransFilter] = useState<'all' | 'credit' | 'debit'>('all');
+
+  // Month navigation per expanded bank
+  const now = new Date();
+  const [viewMonth, setViewMonth] = useState(now.getMonth());
+  const [viewYear, setViewYear] = useState(now.getFullYear());
 
   const fetchBanks = async () => {
     try {
       const res = await apiGet("/api/banks");
       setBanks(Array.isArray(res) ? res : []);
-    } catch(e) { console.error(e); }
+    } catch (e) { console.error(e); }
     setLoading(false);
   };
 
-  const fetchBankTransactions = async (bankId: string) => {
+  const fetchBankTransactions = async (bankId: string, month: number, year: number) => {
     try {
-      const res = await apiGet(`/api/banks?action=transactions&bankId=${bankId}`);
-      setBankTransactions(Array.isArray(res) ? res : []);
-    } catch(e) { console.error(e); }
+      const res = await apiGet(`/api/banks?action=transactions&bankId=${bankId}&month=${month}&year=${year}`);
+      setBankTransactions(Array.isArray(res.transactions) ? res.transactions : []);
+      setMonthlySummary(res.summary || null);
+    } catch (e) { console.error(e); }
   };
 
   useEffect(() => {
     if (session) fetchBanks();
   }, [session]);
 
+  // Re-fetch transactions when month changes while a bank is expanded
+  useEffect(() => {
+    if (expandedBank) fetchBankTransactions(expandedBank, viewMonth, viewYear);
+  }, [viewMonth, viewYear, expandedBank]);
+
   const handleAdd = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name || last4Digits.length !== 4) return;
-    
     await apiPost("/api/banks", { name, last4Digits, balance: Number(balance) });
-    
-    setName("");
-    setLast4Digits("");
-    setBalance("");
+    setName(""); setLast4Digits(""); setBalance("");
     fetchBanks();
   };
 
@@ -74,69 +87,65 @@ export default function BanksPage() {
 
   const handleTransaction = async () => {
     if (!transactionModal) return;
-    
-    const action = transactionModal.type === 'add' ? 'ADD_MONEY' : 
-                   transactionModal.type === 'withdraw' ? 'WITHDRAW' : 'ADJUST_BALANCE';
-    
-    const payload: any = {
-      action,
-      bankId: transactionModal.bank._id,
-      note: transNote,
-      date: transDate
-    };
-    
-    if (action === 'ADJUST_BALANCE') {
-      payload.balance = Number(transAmount);
-    } else {
-      payload.amount = Number(transAmount);
-    }
-    
+    const action = transactionModal.type === 'add' ? 'ADD_MONEY' :
+      transactionModal.type === 'withdraw' ? 'WITHDRAW' : 'ADJUST_BALANCE';
+    const payload: any = { action, bankId: transactionModal.bank._id, note: transNote, date: transDate };
+    if (action === 'ADJUST_BALANCE') payload.balance = Number(transAmount);
+    else payload.amount = Number(transAmount);
     await apiPut("/api/banks", payload);
-    
     setTransactionModal(null);
     fetchBanks();
     if (expandedBank === transactionModal.bank._id) {
-      fetchBankTransactions(transactionModal.bank._id);
+      fetchBankTransactions(transactionModal.bank._id, viewMonth, viewYear);
     }
   };
 
   const toggleBankExpand = (bankId: string) => {
     if (expandedBank === bankId) {
       setExpandedBank(null);
+      setBankTransactions([]);
+      setMonthlySummary(null);
     } else {
       setExpandedBank(bankId);
-      fetchBankTransactions(bankId);
+      // Reset to current month when opening a new bank
+      setViewMonth(now.getMonth());
+      setViewYear(now.getFullYear());
+      setTransFilter('all');
+      fetchBankTransactions(bankId, now.getMonth(), now.getFullYear());
     }
   };
 
+  const navigateMonth = (dir: number) => {
+    let m = viewMonth + dir;
+    let y = viewYear;
+    if (m < 0) { m = 11; y -= 1; }
+    if (m > 11) { m = 0; y += 1; }
+    setViewMonth(m);
+    setViewYear(y);
+  };
+
+  const isCurrentMonth = viewMonth === now.getMonth() && viewYear === now.getFullYear();
   const totalBalance = banks.reduce((acc, curr) => acc + curr.balance, 0);
+  const filteredTransactions = bankTransactions.filter(t => transFilter === 'all' || t.type === transFilter);
 
-  const filteredTransactions = bankTransactions.filter(t => 
-    transFilter === 'all' || t.type === transFilter
-  );
-
-  // Analytics data for expanded bank
+  // Analytics for the viewed month's transactions
   const getAnalyticsData = () => {
     if (!expandedBank || bankTransactions.length === 0) return null;
-    
     const creditTotal = bankTransactions.filter(t => t.type === 'credit').reduce((acc, t) => acc + t.amount, 0);
     const debitTotal = bankTransactions.filter(t => t.type === 'debit').reduce((acc, t) => acc + t.amount, 0);
-    
     const pieData = [
       { name: 'Credits', value: creditTotal },
-      { name: 'Debits', value: debitTotal }
+      { name: 'Debits', value: debitTotal },
     ];
-    
-    // Monthly spending
-    const monthlyMap: any = {};
+    // Category breakdown for the month
+    const catMap: any = {};
     bankTransactions.forEach(t => {
-      const month = new Date(t.date).toLocaleString('default', { month: 'short' });
-      if (!monthlyMap[month]) monthlyMap[month] = { name: month, Credits: 0, Debits: 0 };
-      if (t.type === 'credit') monthlyMap[month].Credits += t.amount;
-      else monthlyMap[month].Debits += t.amount;
+      const key = t.category || 'other';
+      if (!catMap[key]) catMap[key] = { name: key, Credits: 0, Debits: 0 };
+      if (t.type === 'credit') catMap[key].Credits += t.amount;
+      else catMap[key].Debits += t.amount;
     });
-    const barData = Object.values(monthlyMap).slice(-6);
-    
+    const barData = Object.values(catMap);
     return { pieData, barData };
   };
 
@@ -146,7 +155,7 @@ export default function BanksPage() {
     <div className="font-[Inter] text-[#e2e2e8]">
       <header className="mb-10">
         <h1 className="text-2xl md:text-3xl font-[Manrope] font-bold text-white mb-2">Linked Accounts</h1>
-        <p className="text-sm text-[#bac9cc]">Secure bank management and balances</p>
+        <p className="text-sm text-[#bac9cc]">Monthly bank statements — browse transactions by month</p>
       </header>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-8">
@@ -231,19 +240,67 @@ export default function BanksPage() {
               <AnimatePresence>
                 {isExpanded && (
                   <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="border-t border-[#3b494c]/50">
-                    
+
+                    {/* Month Navigator */}
+                    <div className="flex items-center justify-between px-6 py-4 bg-[#0c0e12]/60 border-b border-[#3b494c]/30">
+                      <button
+                        onClick={() => navigateMonth(-1)}
+                        className="w-8 h-8 rounded-full bg-[#1e2024] border border-[#3b494c] flex items-center justify-center text-[#bac9cc] hover:text-white hover:border-[#00e5ff] transition-colors"
+                      >
+                        <ChevronLeft size={16} />
+                      </button>
+                      <div className="text-center">
+                        <p className="text-white font-[Manrope] font-bold">{MONTH_NAMES[viewMonth]} {viewYear}</p>
+                        {isCurrentMonth && <p className="text-[10px] text-[#00e5ff] uppercase tracking-widest">Current Month</p>}
+                      </div>
+                      <button
+                        onClick={() => navigateMonth(1)}
+                        disabled={isCurrentMonth}
+                        className="w-8 h-8 rounded-full bg-[#1e2024] border border-[#3b494c] flex items-center justify-center text-[#bac9cc] hover:text-white hover:border-[#00e5ff] transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                      >
+                        <ChevronRight size={16} />
+                      </button>
+                    </div>
+
+                    {/* Monthly Summary Cards */}
+                    {monthlySummary && (
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 p-4 md:p-6 bg-[#0c0e12]/40 border-b border-[#3b494c]/30">
+                        <div className="glass-panel p-3 rounded-xl">
+                          <p className="text-[10px] text-[#849396] uppercase tracking-widest mb-1">Opening Balance</p>
+                          <p className="text-base font-[Manrope] font-bold text-white">
+                            {monthlySummary.openingBalance !== null ? formatINR(monthlySummary.openingBalance) : '—'}
+                          </p>
+                        </div>
+                        <div className="glass-panel p-3 rounded-xl">
+                          <p className="text-[10px] text-[#849396] uppercase tracking-widest mb-1">Total Credits</p>
+                          <p className="text-base font-[Manrope] font-bold text-[#00e5ff]">+{formatINR(monthlySummary.totalCredits)}</p>
+                        </div>
+                        <div className="glass-panel p-3 rounded-xl">
+                          <p className="text-[10px] text-[#849396] uppercase tracking-widest mb-1">Total Debits</p>
+                          <p className="text-base font-[Manrope] font-bold text-[#ffb4ab]">-{formatINR(monthlySummary.totalDebits)}</p>
+                        </div>
+                        <div className="glass-panel p-3 rounded-xl">
+                          <p className="text-[10px] text-[#849396] uppercase tracking-widest mb-1">Closing Balance</p>
+                          <p className="text-base font-[Manrope] font-bold text-[#c3f5ff]">
+                            {monthlySummary.closingBalance !== null ? formatINR(monthlySummary.closingBalance) : '—'}
+                          </p>
+                        </div>
+                      </div>
+                    )}
+
                     {/* Analytics Charts */}
-                    {analytics && (
-                      <div className="p-6 bg-[#0c0e12]/50">
-                        <h4 className="text-sm font-medium text-white mb-4">Account Analytics</h4>
+                    {analytics && bankTransactions.length > 0 && (
+                      <div className="p-4 md:p-6 bg-[#0c0e12]/30 border-b border-[#3b494c]/30">
+                        <p className="text-xs font-medium text-[#849396] uppercase tracking-widest mb-4">
+                          {MONTH_NAMES[viewMonth]} Analytics
+                        </p>
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                          {/* Credit vs Debit Pie */}
                           <div className="glass-panel p-4 rounded-xl">
                             <p className="text-xs text-[#849396] mb-3">Credit vs Debit</p>
-                            <div className="h-48" style={{ minHeight: 0 }}>
+                            <div className="h-44" style={{ minHeight: 0 }}>
                               <ResponsiveContainer width="100%" height="100%">
                                 <PieChart>
-                                  <Pie data={analytics.pieData} innerRadius={40} outerRadius={70} paddingAngle={5} dataKey="value" stroke="none">
+                                  <Pie data={analytics.pieData} innerRadius={40} outerRadius={65} paddingAngle={5} dataKey="value" stroke="none">
                                     <Cell fill="#00e5ff" />
                                     <Cell fill="#ffb4ab" />
                                   </Pie>
@@ -253,11 +310,9 @@ export default function BanksPage() {
                               </ResponsiveContainer>
                             </div>
                           </div>
-                          
-                          {/* Monthly Activity Bar */}
                           <div className="glass-panel p-4 rounded-xl">
-                            <p className="text-xs text-[#849396] mb-3">Monthly Activity</p>
-                            <div className="h-48" style={{ minHeight: 0 }}>
+                            <p className="text-xs text-[#849396] mb-3">By Category</p>
+                            <div className="h-44" style={{ minHeight: 0 }}>
                               <ResponsiveContainer width="100%" height="100%">
                                 <BarChart data={analytics.barData} margin={{ top: 0, right: 0, left: -20, bottom: 0 }}>
                                   <XAxis dataKey="name" stroke="#849396" tick={{fill: '#bac9cc', fontSize: 10}} axisLine={false} tickLine={false} />
@@ -272,39 +327,45 @@ export default function BanksPage() {
                         </div>
                       </div>
                     )}
-                    
+
+                    {/* Transaction List */}
                     <div className="p-4 md:p-6">
                       <div className="flex flex-col md:flex-row justify-between md:items-center gap-3 mb-4">
-                        <h4 className="text-sm font-medium text-white">Transaction History</h4>
+                        <h4 className="text-sm font-medium text-white flex items-center gap-2">
+                          <Calendar size={14} className="text-[#00e5ff]" />
+                          {MONTH_NAMES[viewMonth]} {viewYear} — {bankTransactions.length} transaction{bankTransactions.length !== 1 ? 's' : ''}
+                        </h4>
                         <div className="flex flex-wrap gap-2">
                           <button onClick={() => setTransFilter('all')} className={`px-3 py-1 text-xs rounded-lg transition-colors ${transFilter === 'all' ? 'bg-[#00e5ff]/20 text-[#00e5ff]' : 'bg-[#282a2e] text-[#849396]'}`}>All</button>
                           <button onClick={() => setTransFilter('credit')} className={`px-3 py-1 text-xs rounded-lg transition-colors ${transFilter === 'credit' ? 'bg-[#00e5ff]/20 text-[#00e5ff]' : 'bg-[#282a2e] text-[#849396]'}`}>Credits</button>
                           <button onClick={() => setTransFilter('debit')} className={`px-3 py-1 text-xs rounded-lg transition-colors ${transFilter === 'debit' ? 'bg-[#ffb4ab]/20 text-[#ffb4ab]' : 'bg-[#282a2e] text-[#849396]'}`}>Debits</button>
                         </div>
                       </div>
-                      
-                      <div className="space-y-2 max-h-96 overflow-y-auto">
+
+                      <div className="space-y-2 max-h-[480px] overflow-y-auto pr-1">
                         {filteredTransactions.map((trans, idx) => (
                           <div key={idx} className="flex justify-between items-center p-3 rounded-xl bg-[#1a1c20] border border-[#3b494c]/30 hover:border-[#3b494c] transition-colors">
                             <div className="flex items-center gap-3">
-                              <div className={`w-10 h-10 rounded-full flex items-center justify-center ${trans.type === 'credit' ? 'bg-[#00e5ff]/10 text-[#00e5ff]' : 'bg-[#ffb4ab]/10 text-[#ffb4ab]'}`}>
-                                {trans.type === 'credit' ? <TrendingUp size={18} /> : <TrendingDown size={18} />}
+                              <div className={`w-10 h-10 shrink-0 rounded-full flex items-center justify-center ${trans.type === 'credit' ? 'bg-[#00e5ff]/10 text-[#00e5ff]' : 'bg-[#ffb4ab]/10 text-[#ffb4ab]'}`}>
+                                {trans.type === 'credit' ? <TrendingUp size={16} /> : <TrendingDown size={16} />}
                               </div>
                               <div>
                                 <p className="text-sm font-medium text-white capitalize">{trans.category}</p>
                                 <p className="text-xs text-[#849396] mt-0.5">{trans.note || 'No note'}</p>
                                 <p className="text-xs text-[#849396] flex items-center gap-1 mt-1">
-                                  <Calendar size={10} /> {new Date(trans.date).toLocaleDateString()}
+                                  <Calendar size={10} /> {new Date(trans.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
                                 </p>
                               </div>
                             </div>
-                            <p className={`text-lg font-[Manrope] font-bold ${trans.type === 'credit' ? 'text-[#00e5ff]' : 'text-[#ffb4ab]'}`}>
+                            <p className={`text-base font-[Manrope] font-bold shrink-0 ${trans.type === 'credit' ? 'text-[#00e5ff]' : 'text-[#ffb4ab]'}`}>
                               {trans.type === 'credit' ? '+' : '-'}{formatINR(trans.amount)}
                             </p>
                           </div>
                         ))}
                         {filteredTransactions.length === 0 && (
-                          <div className="text-center py-10 text-sm text-[#849396]">No transactions found</div>
+                          <div className="text-center py-12 text-sm text-[#849396] border border-dashed border-[#3b494c] rounded-xl">
+                            No {transFilter !== 'all' ? transFilter + ' ' : ''}transactions in {MONTH_NAMES[viewMonth]} {viewYear}
+                          </div>
                         )}
                       </div>
                     </div>
@@ -314,6 +375,12 @@ export default function BanksPage() {
             </motion.div>
           );
         })}
+
+        {banks.length === 0 && (
+          <div className="text-center py-16 text-[#849396] text-sm border border-dashed border-[#3b494c] rounded-2xl">
+            No bank accounts linked yet. Add one above.
+          </div>
+        )}
       </div>
 
       {/* Transaction Modal */}
