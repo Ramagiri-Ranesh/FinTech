@@ -115,6 +115,11 @@ export async function PUT(req: Request) {
       const paymentAmount = Number(body.amount);
       card.totalDue = Math.max(0, card.totalDue - paymentAmount);
       
+      // Reduce usedLimit by the payment amount so available credit is freed up
+      if (card.usedLimit !== undefined) {
+        card.usedLimit = Math.max(0, (card.usedLimit || 0) - paymentAmount);
+      }
+      
       // Add to payment history
       card.paymentHistory.push({
         amount: paymentAmount,
