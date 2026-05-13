@@ -45,6 +45,8 @@ export async function PUT(req: Request) {
       card.totalDue = Number(body.totalDue);
       if (body.usedLimit !== undefined) card.usedLimit = Number(body.usedLimit);
       if (body.creditLimit !== undefined) card.creditLimit = Number(body.creditLimit);
+      // Update dueDate in the same call if provided
+      if (body.dueDate !== undefined) card.dueDate = body.dueDate ? Number(body.dueDate) : null;
       card.lastBillingUpdate = new Date();
       await card.save();
       return NextResponse.json({ success: true, card });
@@ -55,11 +57,21 @@ export async function PUT(req: Request) {
   if (body.action === 'UPDATE_CARD_DUE_DATE' && body.id) {
     const card = await Card.findOne({ _id: body.id, userId: session.user.id });
     if (card) {
-      card.dueDate = body.dueDate !== undefined ? Number(body.dueDate) : null;
+      card.dueDate = body.dueDate !== undefined ? (body.dueDate ? Number(body.dueDate) : null) : card.dueDate;
       await card.save();
       return NextResponse.json({ success: true, card });
     }
     return NextResponse.json({ error: "Card not found" }, { status: 404 });
+  }
+
+  if (body.action === 'UPDATE_EMI_DUE_DATE' && body.id) {
+    const emi = await EMI.findOne({ _id: body.id, userId: session.user.id });
+    if (emi) {
+      emi.dueDate = body.dueDate !== undefined ? (body.dueDate ? Number(body.dueDate) : null) : emi.dueDate;
+      await emi.save();
+      return NextResponse.json({ success: true, emi });
+    }
+    return NextResponse.json({ error: "EMI not found" }, { status: 404 });
   }
   
   if (body.action === 'PAY_EMI' && body.id) {

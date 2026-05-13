@@ -55,6 +55,7 @@ const EMISchema = new Schema({
   remainingMonths: { type: Number, required: true },
   paidMonths: { type: Number, default: 0 },
   currentMonth: { type: Number, default: 1 },
+  dueDate: { type: Number, default: null }, // Day of month (1-31) when EMI payment is due
   paymentHistory: [{
     month: Number,
     amount: Number,

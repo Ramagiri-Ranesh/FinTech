@@ -63,10 +63,33 @@ export async function GET() {
         totalDue: c.totalDue,
         dueDate: c.dueDate,
         daysUntilDue,
+        type: 'card',
       };
     })
-    .filter((c: any) => c.daysUntilDue <= 7) // show within 7 days (including overdue)
+    .filter((c: any) => c.daysUntilDue <= 5)
     .sort((a: any, b: any) => a.daysUntilDue - b.daysUntilDue);
+
+  // Upcoming EMI payments — EMIs with a dueDate set and remaining months > 0
+  const upcomingEMIs = emis
+    .filter((e: any) => e.dueDate != null && e.remainingMonths > 0)
+    .map((e: any) => {
+      const daysUntilDue = e.dueDate - today;
+      return {
+        _id: e._id,
+        name: e.name,
+        monthlyAmount: e.monthlyAmount,
+        dueDate: e.dueDate,
+        daysUntilDue,
+        currentMonth: e.currentMonth,
+        type: 'emi',
+      };
+    })
+    .filter((e: any) => e.daysUntilDue <= 5)
+    .sort((a: any, b: any) => a.daysUntilDue - b.daysUntilDue);
+
+  const upcomingPayments = [...upcomingCardBills, ...upcomingEMIs].sort(
+    (a: any, b: any) => a.daysUntilDue - b.daysUntilDue
+  );
 
   // Build last 6 months chart data
   const monthlyData = [];
@@ -112,5 +135,6 @@ export async function GET() {
     monthlyData,
     cardsList: cards,
     upcomingCardBills,
+    upcomingPayments,
   });
 }

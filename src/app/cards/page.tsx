@@ -11,9 +11,10 @@ import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, BarChart, Bar, XAxis
 /** Returns days until due this month (negative = overdue, 0 = due today) */
 function getDaysUntilDue(dueDate: number | null | undefined): number | null {
   if (!dueDate) return null;
-  const today = new Date();
-  const due = new Date(today.getFullYear(), today.getMonth(), dueDate);
-  const diff = Math.floor((due.getTime() - today.setHours(0, 0, 0, 0)) / (1000 * 60 * 60 * 24));
+  const now = new Date();
+  const todayMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const dueMidnight = new Date(now.getFullYear(), now.getMonth(), dueDate);
+  const diff = Math.floor((dueMidnight.getTime() - todayMidnight.getTime()) / (1000 * 60 * 60 * 24));
   return diff;
 }
 
@@ -67,6 +68,10 @@ export default function CardsPage() {
   // EMI Detail Modal State
   const [emiDetailModal, setEmiDetailModal] = useState<any>(null);
 
+  // Edit EMI Due Date Modal
+  const [editEmiModal, setEditEmiModal] = useState<any>(null);
+  const [editEmiDueDate, setEditEmiDueDate] = useState("");
+
   // Edit Card Due Modal
   const [editCardModal, setEditCardModal] = useState<any>(null);
   const [editDueAmount, setEditDueAmount] = useState("");
@@ -84,6 +89,7 @@ export default function CardsPage() {
   const [numberOfMonths, setNumberOfMonths] = useState("");
   const [monthlyAmount, setMonthlyAmount] = useState("");
   const [dueDate, setDueDate] = useState("");
+  const [emiDueDate, setEmiDueDate] = useState("");
 
 
   const fetchData = async () => {
@@ -113,11 +119,11 @@ export default function CardsPage() {
 
     const payload = type === "Monthly"
       ? { type: "Monthly", name, last6Digits, totalDue: Number(totalDue), creditLimit: Number(creditLimit), usedLimit: Number(usedLimit), dueDate: dueDate ? new Date(dueDate).getDate() : null }
-      : { type: "EMI", name, totalAmount: Number(totalDue), numberOfMonths: Number(numberOfMonths), monthlyAmount: Number(monthlyAmount), remainingMonths: Number(numberOfMonths), paidMonths: 0, currentMonth: 1 };
+      : { type: "EMI", name, totalAmount: Number(totalDue), numberOfMonths: Number(numberOfMonths), monthlyAmount: Number(monthlyAmount), remainingMonths: Number(numberOfMonths), paidMonths: 0, currentMonth: 1, dueDate: emiDueDate ? new Date(emiDueDate).getDate() : null };
 
     await apiPost("/api/cards", payload);
 
-    setName(""); setLast6Digits(""); setTotalDue(""); setCreditLimit(""); setUsedLimit(""); setNumberOfMonths(""); setMonthlyAmount(""); setDueDate("");
+    setName(""); setLast6Digits(""); setTotalDue(""); setCreditLimit(""); setUsedLimit(""); setNumberOfMonths(""); setMonthlyAmount(""); setDueDate(""); setEmiDueDate("");
     fetchData();
   };
 
@@ -161,18 +167,13 @@ export default function CardsPage() {
   const handleUpdateCardDue = async () => {
     if (!editCardModal) return;
 
+    // Single API call — pass dueDate along with billing details
     await apiPut("/api/cards", {
       action: 'UPDATE_CARD_DUE',
       id: editCardModal._id,
       totalDue: Number(editDueAmount),
       creditLimit: Number(editCreditLimit),
       usedLimit: Number(editUsedLimit),
-    });
-
-    // Also update due date if changed
-    await apiPut("/api/cards", {
-      action: 'UPDATE_CARD_DUE_DATE',
-      id: editCardModal._id,
       dueDate: editDueDate ? new Date(editDueDate).getDate() : null,
     });
 
@@ -201,6 +202,30 @@ export default function CardsPage() {
     setEmiDetailModal(emi);
   };
 
+  const openEditEmiModal = (emi: any) => {
+    setEditEmiModal(emi);
+    if (emi.dueDate) {
+      const now = new Date();
+      const y = now.getFullYear();
+      const m = String(now.getMonth() + 1).padStart(2, '0');
+      const d = String(emi.dueDate).padStart(2, '0');
+      setEditEmiDueDate(`${y}-${m}-${d}`);
+    } else {
+      setEditEmiDueDate("");
+    }
+  };
+
+  const handleUpdateEmiDueDate = async () => {
+    if (!editEmiModal) return;
+    await apiPut("/api/cards", {
+      action: 'UPDATE_EMI_DUE_DATE',
+      id: editEmiModal._id,
+      dueDate: editEmiDueDate ? new Date(editEmiDueDate).getDate() : null,
+    });
+    setEditEmiModal(null);
+    fetchData();
+  };
+
   if (loading) return <div className="text-[#00daf3] p-10">Accessing Vault...</div>;
 
   return (
@@ -216,7 +241,11 @@ export default function CardsPage() {
           const days = getDaysUntilDue(c.dueDate);
           return days !== null && days <= 5;
         });
-        if (urgentCards.length === 0) return null;
+        const urgentEmis = (data.emis as any[]).filter((e: any) => {
+          const days = getDaysUntilDue(e.dueDate);
+          return days !== null && days <= 5 && e.remainingMonths > 0;
+        });
+        if (urgentCards.length === 0 && urgentEmis.length === 0) return null;
         return (
           <motion.div
             initial={{ opacity: 0, y: -10 }}
@@ -225,21 +254,27 @@ export default function CardsPage() {
           >
             <div className="flex items-center gap-2 text-[#fec931] font-semibold text-sm">
               <AlertTriangle size={18} />
-              Upcoming Card Bill Payments
+              Upcoming Payments Due
             </div>
             <div className="flex flex-wrap gap-3 mt-1">
-              {urgentCards.map((c: any) => {
-                const days = getDaysUntilDue(c.dueDate);
-                return (
-                  <div key={c._id} className="flex items-center gap-2 text-xs text-[#e2e2e8]">
-                    <CreditCard size={14} className="text-[#fec931]" />
-                    <span className="font-medium">{c.name}</span>
-                    <span className="text-[#849396]">••{c.last6Digits}</span>
-                    <DueDateBadge dueDate={c.dueDate} />
-                    <span className="text-[#bac9cc]">{formatINR(c.totalDue)} due</span>
-                  </div>
-                );
-              })}
+              {urgentCards.map((c: any) => (
+                <div key={c._id} className="flex items-center gap-2 text-xs text-[#e2e2e8]">
+                  <CreditCard size={14} className="text-[#ffb4ab]" />
+                  <span className="font-medium">{c.name}</span>
+                  <span className="text-[#849396]">••{c.last6Digits}</span>
+                  <DueDateBadge dueDate={c.dueDate} />
+                  <span className="text-[#bac9cc]">{formatINR(c.totalDue)} due</span>
+                </div>
+              ))}
+              {urgentEmis.map((e: any) => (
+                <div key={e._id} className="flex items-center gap-2 text-xs text-[#e2e2e8]">
+                  <RotateCcw size={14} className="text-[#fec931]" />
+                  <span className="font-medium">{e.name}</span>
+                  <span className="text-[#849396]">EMI #{e.currentMonth}</span>
+                  <DueDateBadge dueDate={e.dueDate} />
+                  <span className="text-[#bac9cc]">{formatINR(e.monthlyAmount)} due</span>
+                </div>
+              ))}
             </div>
           </motion.div>
         );
@@ -318,6 +353,21 @@ export default function CardsPage() {
                   className="w-full bg-[#0c0e12] border border-[#3b494c] rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-[#fec931] text-white [color-scheme:dark]"
                 />
                 <p className="text-xs text-[#849396] mt-1">You'll see an alert when the due date is within 5 days.</p>
+              </div>
+            )}
+
+            {type === "EMI" && (
+              <div>
+                <label className="block text-xs text-[#bac9cc] mb-1 flex items-center gap-1">
+                  <Bell size={11} /> EMI Due Date — optional
+                </label>
+                <input
+                  type="date"
+                  value={emiDueDate}
+                  onChange={e => setEmiDueDate(e.target.value)}
+                  className="w-full bg-[#0c0e12] border border-[#3b494c] rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-[#fec931] text-white [color-scheme:dark]"
+                />
+                <p className="text-xs text-[#849396] mt-1">You'll see an alert when the EMI due date is within 5 days.</p>
               </div>
             )}
 
@@ -492,6 +542,9 @@ export default function CardsPage() {
                       </h4>
                       <p className="text-sm text-[#bac9cc]">{emi.paidMonths} / {emi.numberOfMonths} Installments Settled</p>
                       <p className="text-xs text-[#849396] mt-1">Current: Month {emi.currentMonth}</p>
+                      <div className="mt-2">
+                        <DueDateBadge dueDate={emi.dueDate} />
+                      </div>
                     </div>
                     <div className="text-left md:text-right w-full md:w-auto mt-2 md:mt-0">
                       <p className="text-xl font-[Manrope] font-bold text-white mb-1">{formatINR(emi.monthlyAmount)}</p>
@@ -505,13 +558,18 @@ export default function CardsPage() {
 
                   <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-3">
                     <p className="text-xs text-[#bac9cc]">{emi.remainingMonths} Months Pending</p>
-                    {emi.remainingMonths > 0 ? (
-                      <button onClick={(e) => { e.stopPropagation(); openPaymentModal('EMI', emi); }} className="w-full md:w-auto px-5 py-2.5 bg-[#fec931]/10 text-[#fec931] border border-[#fec931]/20 hover:bg-[#fec931]/20 rounded-xl text-xs font-semibold transition-colors flex items-center justify-center gap-2 shadow-lg">
-                        <RotateCcw size={14} /> Pay EMI #{emi.currentMonth}
+                    <div className="flex flex-wrap gap-2 w-full md:w-auto">
+                      <button onClick={(e) => { e.stopPropagation(); openEditEmiModal(emi); }} className="px-4 py-2 bg-[#282a2e] text-[#bac9cc] border border-[#3b494c] hover:border-[#fec931] hover:text-[#fec931] rounded-xl text-xs font-semibold transition-all flex items-center gap-2">
+                        <Edit2 size={14} /> Due Date
                       </button>
-                    ) : (
-                      <span className="text-[#9cf0ff] text-xs font-medium px-3 py-1 bg-[#00e5ff]/10 rounded-full">Fully Recovered</span>
-                    )}
+                      {emi.remainingMonths > 0 ? (
+                        <button onClick={(e) => { e.stopPropagation(); openPaymentModal('EMI', emi); }} className="flex-1 md:flex-none px-5 py-2.5 bg-[#fec931]/10 text-[#fec931] border border-[#fec931]/20 hover:bg-[#fec931]/20 rounded-xl text-xs font-semibold transition-colors flex items-center justify-center gap-2 shadow-lg">
+                          <RotateCcw size={14} /> Pay EMI #{emi.currentMonth}
+                        </button>
+                      ) : (
+                        <span className="text-[#9cf0ff] text-xs font-medium px-3 py-1 bg-[#00e5ff]/10 rounded-full">Fully Recovered</span>
+                      )}
+                    </div>
                   </div>
                 </div>
               )
@@ -682,6 +740,42 @@ export default function CardsPage() {
         )}
       </AnimatePresence>
 
+
+      {/* Edit EMI Due Date Modal */}
+      <AnimatePresence>
+        {editEmiModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setEditEmiModal(null)} className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
+            <motion.div initial={{ opacity: 0, scale: 0.95, y: 20 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95, y: 20 }} className="relative z-10 w-full max-w-md glass-panel p-6 md:p-8 rounded-2xl shadow-2xl border border-[#fec931]/20 mx-4">
+              <button onClick={() => setEditEmiModal(null)} className="absolute top-6 right-6 text-[#849396] hover:text-white transition-colors">
+                <X size={20} />
+              </button>
+              <h3 className="text-xl font-[Manrope] font-bold text-white mb-2">Set EMI Due Date</h3>
+              <p className="text-sm text-[#bac9cc] mb-8">
+                Set the monthly due date for <span className="text-white font-medium">{editEmiModal.name}</span>
+              </p>
+              <div className="space-y-6">
+                <div>
+                  <label className="block text-xs font-semibold text-[#849396] uppercase tracking-widest mb-3 flex items-center gap-1">
+                    <Bell size={12} /> EMI Due Date
+                  </label>
+                  <input
+                    type="date"
+                    autoFocus
+                    value={editEmiDueDate}
+                    onChange={e => setEditEmiDueDate(e.target.value)}
+                    className="w-full bg-[#0c0e12] border border-[#fec931] rounded-xl px-4 py-4 text-lg focus:outline-none text-white [color-scheme:dark]"
+                  />
+                  <p className="text-xs text-[#849396] mt-2">Alert shown when due date is within 5 days. Leave blank to remove.</p>
+                </div>
+                <button onClick={handleUpdateEmiDueDate} className="w-full bg-gradient-to-r from-[#fec931] to-[#ffb700] text-[#1a1c20] font-bold py-4 rounded-xl hover:opacity-90 flex items-center justify-center gap-2 shadow-[0_0_30px_rgba(254,201,49,0.3)]">
+                  <Check size={20} /> Save Due Date
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
 
       {/* Edit Card Due Modal */}
       <AnimatePresence>
