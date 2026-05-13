@@ -82,6 +82,7 @@ export async function PUT(req: Request) {
       emi.remainingMonths -= 1;
       emi.paidMonths += 1;
       emi.currentMonth += 1;
+      emi.lastPaidDate = new Date(); // track when this month's EMI was paid
       
       // Add to payment history
       emi.paymentHistory.push({

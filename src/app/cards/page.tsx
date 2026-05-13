@@ -240,13 +240,21 @@ export default function CardsPage() {
 
       {/* Due Date Alert Banner */}
       {(() => {
+        const now = new Date();
         const urgentCards = (data.cards as any[]).filter((c: any) => {
+          if (!c.totalDue || c.totalDue <= 0) return false; // paid — hide reminder
           const days = getDaysUntilDue(c.dueDate);
           return days !== null && days <= 5;
         });
         const urgentEmis = (data.emis as any[]).filter((e: any) => {
+          if (e.remainingMonths <= 0) return false;
+          // Hide if already paid this calendar month
+          if (e.lastPaidDate) {
+            const paid = new Date(e.lastPaidDate);
+            if (paid.getMonth() === now.getMonth() && paid.getFullYear() === now.getFullYear()) return false;
+          }
           const days = getDaysUntilDue(e.dueDate);
-          return days !== null && days <= 5 && e.remainingMonths > 0;
+          return days !== null && days <= 5;
         });
         if (urgentCards.length === 0 && urgentEmis.length === 0) return null;
         return (
@@ -480,7 +488,7 @@ export default function CardsPage() {
                 <h4 className="text-lg font-medium text-white mb-1">{c.name}</h4>
                 <p className="text-[#849396] text-sm tracking-[0.2em] mb-2">•••• •••• {c.last6Digits}</p>
                 <div className="mb-4">
-                  <DueDateBadge dueDate={c.dueDate} />
+                  {c.totalDue > 0 && <DueDateBadge dueDate={c.dueDate} />}
                 </div>
 
                 {/* Credit Limit Bar */}
@@ -535,6 +543,10 @@ export default function CardsPage() {
           <div className="flex flex-col gap-4">
             {data.emis.map((emi: any) => {
               const progressPercent = (emi.paidMonths / emi.numberOfMonths) * 100;
+              const now = new Date();
+              const emiPaidThisMonth = emi.lastPaidDate &&
+                new Date(emi.lastPaidDate).getMonth() === now.getMonth() &&
+                new Date(emi.lastPaidDate).getFullYear() === now.getFullYear();
               return (
                 <div key={emi._id} className="glass-panel p-6 rounded-2xl cursor-pointer hover:border-[#fec931]/30 transition-colors" onClick={() => openEmiDetailModal(emi)}>
                   <div className="flex flex-col md:flex-row justify-between md:items-start mb-4 gap-2 text-left">
@@ -546,7 +558,13 @@ export default function CardsPage() {
                       <p className="text-sm text-[#bac9cc]">{emi.paidMonths} / {emi.numberOfMonths} Installments Settled</p>
                       <p className="text-xs text-[#849396] mt-1">Current: Month {emi.currentMonth}</p>
                       <div className="mt-2">
-                        <DueDateBadge dueDate={emi.dueDate} />
+                        {/* Only show due date badge if not already paid this month */}
+                        {!emiPaidThisMonth && emi.remainingMonths > 0 && <DueDateBadge dueDate={emi.dueDate} />}
+                        {emiPaidThisMonth && (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium border bg-[#00e5ff]/10 text-[#00e5ff] border-[#00e5ff]/20">
+                            ✓ Paid this month
+                          </span>
+                        )}
                       </div>
                     </div>
                     <div className="text-left md:text-right w-full md:w-auto mt-2 md:mt-0">

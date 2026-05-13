@@ -70,8 +70,17 @@ export async function GET() {
     .sort((a: any, b: any) => a.daysUntilDue - b.daysUntilDue);
 
   // Upcoming EMI payments — EMIs with a dueDate set and remaining months > 0
+  // Suppress if already paid this calendar month (lastPaidDate is in current month/year)
   const upcomingEMIs = emis
-    .filter((e: any) => e.dueDate != null && e.remainingMonths > 0)
+    .filter((e: any) => {
+      if (e.dueDate == null || e.remainingMonths <= 0) return false;
+      // Hide if already paid this calendar month
+      if (e.lastPaidDate) {
+        const paid = new Date(e.lastPaidDate);
+        if (paid.getMonth() === currentMonth && paid.getFullYear() === currentYear) return false;
+      }
+      return true;
+    })
     .map((e: any) => {
       const daysUntilDue = e.dueDate - today;
       return {
