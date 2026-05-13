@@ -3,10 +3,51 @@
 import { useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Plus, CreditCard, RotateCcw, X, Check, Calendar, DollarSign, Building2, Edit2, Info, TrendingDown, PieChart as PieChartIcon } from "lucide-react";
+import { Plus, CreditCard, RotateCcw, X, Check, Calendar, DollarSign, Building2, Edit2, Info, TrendingDown, PieChart as PieChartIcon, Bell, AlertTriangle } from "lucide-react";
 import { formatINR } from "@/lib/utils";
 import { apiGet, apiPost, apiPut } from "@/lib/api";
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, BarChart, Bar, XAxis, YAxis, Legend } from "recharts";
+
+/** Returns days until due this month (negative = overdue, 0 = due today) */
+function getDaysUntilDue(dueDate: number | null | undefined): number | null {
+  if (!dueDate) return null;
+  const today = new Date();
+  const due = new Date(today.getFullYear(), today.getMonth(), dueDate);
+  const diff = Math.floor((due.getTime() - today.setHours(0, 0, 0, 0)) / (1000 * 60 * 60 * 24));
+  return diff;
+}
+
+function DueDateBadge({ dueDate }: { dueDate: number | null | undefined }) {
+  const days = getDaysUntilDue(dueDate);
+  if (days === null) return null;
+
+  let label = "";
+  let cls = "";
+
+  if (days < 0) {
+    label = `Overdue by ${Math.abs(days)}d`;
+    cls = "bg-[#ffb4ab]/20 text-[#ffb4ab] border-[#ffb4ab]/40";
+  } else if (days === 0) {
+    label = "Due Today!";
+    cls = "bg-[#ffb4ab]/20 text-[#ffb4ab] border-[#ffb4ab]/40 animate-pulse";
+  } else if (days <= 3) {
+    label = `Due in ${days}d`;
+    cls = "bg-[#fec931]/20 text-[#fec931] border-[#fec931]/40";
+  } else if (days <= 7) {
+    label = `Due in ${days}d`;
+    cls = "bg-[#fec931]/10 text-[#fec931] border-[#fec931]/20";
+  } else {
+    label = `Due ${dueDate}th`;
+    cls = "bg-[#00e5ff]/10 text-[#00e5ff] border-[#00e5ff]/20";
+  }
+
+  return (
+    <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium border ${cls}`}>
+      <Bell size={10} />
+      {label}
+    </span>
+  );
+}
 
 export default function CardsPage() {
   const { data: session } = useSession();
@@ -31,6 +72,7 @@ export default function CardsPage() {
   const [editDueAmount, setEditDueAmount] = useState("");
   const [editCreditLimit, setEditCreditLimit] = useState("");
   const [editUsedLimit, setEditUsedLimit] = useState("");
+  const [editDueDate, setEditDueDate] = useState("");
 
   // Form State
   const [type, setType] = useState("Monthly");
@@ -41,6 +83,7 @@ export default function CardsPage() {
   const [usedLimit, setUsedLimit] = useState("");
   const [numberOfMonths, setNumberOfMonths] = useState("");
   const [monthlyAmount, setMonthlyAmount] = useState("");
+  const [dueDate, setDueDate] = useState("");
 
 
   const fetchData = async () => {
@@ -69,12 +112,12 @@ export default function CardsPage() {
     if (!name || type === "Monthly" && last6Digits.length !== 6) return;
 
     const payload = type === "Monthly"
-      ? { type: "Monthly", name, last6Digits, totalDue: Number(totalDue), creditLimit: Number(creditLimit), usedLimit: Number(usedLimit) }
+      ? { type: "Monthly", name, last6Digits, totalDue: Number(totalDue), creditLimit: Number(creditLimit), usedLimit: Number(usedLimit), dueDate: dueDate ? Number(dueDate) : null }
       : { type: "EMI", name, totalAmount: Number(totalDue), numberOfMonths: Number(numberOfMonths), monthlyAmount: Number(monthlyAmount), remainingMonths: Number(numberOfMonths), paidMonths: 0, currentMonth: 1 };
 
     await apiPost("/api/cards", payload);
 
-    setName(""); setLast6Digits(""); setTotalDue(""); setCreditLimit(""); setUsedLimit(""); setNumberOfMonths(""); setMonthlyAmount("");
+    setName(""); setLast6Digits(""); setTotalDue(""); setCreditLimit(""); setUsedLimit(""); setNumberOfMonths(""); setMonthlyAmount(""); setDueDate("");
     fetchData();
   };
 
@@ -126,6 +169,13 @@ export default function CardsPage() {
       usedLimit: Number(editUsedLimit),
     });
 
+    // Also update due date if changed
+    await apiPut("/api/cards", {
+      action: 'UPDATE_CARD_DUE_DATE',
+      id: editCardModal._id,
+      dueDate: editDueDate ? Number(editDueDate) : null,
+    });
+
     setEditCardModal(null);
     fetchData();
   };
@@ -135,6 +185,7 @@ export default function CardsPage() {
     setEditDueAmount(card.totalDue.toString());
     setEditCreditLimit((card.creditLimit || 0).toString());
     setEditUsedLimit((card.usedLimit || 0).toString());
+    setEditDueDate(card.dueDate ? card.dueDate.toString() : "");
   };
 
   const openEmiDetailModal = (emi: any) => {
@@ -149,6 +200,41 @@ export default function CardsPage() {
         <h1 className="text-2xl md:text-3xl font-[Manrope] font-bold text-white mb-2">Liability Management</h1>
         <p className="text-sm text-[#bac9cc]">Track credit cycles and structured EMIs</p>
       </header>
+
+      {/* Due Date Alert Banner */}
+      {(() => {
+        const urgentCards = (data.cards as any[]).filter((c: any) => {
+          const days = getDaysUntilDue(c.dueDate);
+          return days !== null && days <= 5;
+        });
+        if (urgentCards.length === 0) return null;
+        return (
+          <motion.div
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="mb-8 p-4 rounded-2xl border border-[#fec931]/40 bg-[#fec931]/5 flex flex-col gap-2"
+          >
+            <div className="flex items-center gap-2 text-[#fec931] font-semibold text-sm">
+              <AlertTriangle size={18} />
+              Upcoming Card Bill Payments
+            </div>
+            <div className="flex flex-wrap gap-3 mt-1">
+              {urgentCards.map((c: any) => {
+                const days = getDaysUntilDue(c.dueDate);
+                return (
+                  <div key={c._id} className="flex items-center gap-2 text-xs text-[#e2e2e8]">
+                    <CreditCard size={14} className="text-[#fec931]" />
+                    <span className="font-medium">{c.name}</span>
+                    <span className="text-[#849396]">••{c.last6Digits}</span>
+                    <DueDateBadge dueDate={c.dueDate} />
+                    <span className="text-[#bac9cc]">{formatINR(c.totalDue)} due</span>
+                  </div>
+                );
+              })}
+            </div>
+          </motion.div>
+        );
+      })()}
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-12">
         <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="glass-panel p-5 md:p-8 rounded-2xl shadow-[0_0_40px_-5px_rgba(0,229,255,0.05)] border border-[#3b494c]/50">
@@ -208,6 +294,24 @@ export default function CardsPage() {
                     Remaining: {new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(Math.max(0, Number(creditLimit) - Number(usedLimit)))}
                   </p>
                 )}
+              </div>
+            )}
+
+            {type === "Monthly" && (
+              <div>
+                <label className="block text-xs text-[#bac9cc] mb-1 flex items-center gap-1">
+                  <Bell size={11} /> Bill Due Date (day of month) — optional
+                </label>
+                <input
+                  type="number"
+                  min={1}
+                  max={31}
+                  value={dueDate}
+                  onChange={e => setDueDate(e.target.value)}
+                  placeholder="e.g. 15 (for 15th of each month)"
+                  className="w-full bg-[#0c0e12] border border-[#3b494c] rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-[#fec931] text-white placeholder:text-[#3b494c]"
+                />
+                <p className="text-xs text-[#849396] mt-1">You'll see an alert when the due date is within 5 days.</p>
               </div>
             )}
 
@@ -315,7 +419,10 @@ export default function CardsPage() {
               <div key={c._id} className="relative overflow-hidden bg-gradient-to-br from-[#1a1c20] to-[#111318] p-6 rounded-2xl border border-[#3b494c] shadow-lg">
                 <div className="absolute top-0 right-0 p-4 opacity-50"><CreditCard size={32} /></div>
                 <h4 className="text-lg font-medium text-white mb-1">{c.name}</h4>
-                <p className="text-[#849396] text-sm tracking-[0.2em] mb-4">•••• •••• {c.last6Digits}</p>
+                <p className="text-[#849396] text-sm tracking-[0.2em] mb-2">•••• •••• {c.last6Digits}</p>
+                <div className="mb-4">
+                  <DueDateBadge dueDate={c.dueDate} />
+                </div>
 
                 {/* Credit Limit Bar */}
                 {c.creditLimit > 0 && (
@@ -624,6 +731,22 @@ export default function CardsPage() {
                       Remaining Limit: {new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(Math.max(0, Number(editCreditLimit) - Number(editUsedLimit)))}
                     </p>
                   )}
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-[#849396] uppercase tracking-widest mb-3 flex items-center gap-1">
+                    <Bell size={12} /> Bill Due Date (Day of Month)
+                  </label>
+                  <input
+                    type="number"
+                    min={1}
+                    max={31}
+                    value={editDueDate}
+                    onChange={e => setEditDueDate(e.target.value)}
+                    placeholder="e.g. 15 (leave blank to remove)"
+                    className="w-full bg-[#0c0e12] border border-[#3b494c] rounded-xl px-4 py-4 text-lg focus:outline-none focus:border-[#fec931] text-white placeholder:text-[#3b494c]"
+                  />
+                  <p className="text-xs text-[#849396] mt-2">Alert shown when due date is within 5 days.</p>
                 </div>
 
                 <button onClick={handleUpdateCardDue} className="w-full bg-gradient-to-r from-[#00e5ff] to-[#00b4c8] text-[#001f24] font-bold py-4 rounded-xl hover:opacity-90 flex items-center justify-center gap-2 shadow-[0_0_30px_rgba(0,229,255,0.3)]">

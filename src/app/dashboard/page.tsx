@@ -307,6 +307,59 @@ export default function Dashboard() {
           </div>
         </div>
       </motion.div>
+
+      {/* Upcoming Card Bills */}
+      {data.upcomingCardBills && data.upcomingCardBills.length > 0 && (
+        <motion.div initial={{y:20, opacity:0}} animate={{y:0, opacity:1}} transition={{delay:0.9}} className="mt-8 md:mt-12 glass-panel p-5 md:p-8 rounded-2xl">
+          <h3 className="text-lg font-medium text-white mb-4 flex items-center gap-2">
+            <AlertTriangle size={20} className="text-[#fec931]" /> Upcoming Card Bill Payments
+          </h3>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            {data.upcomingCardBills.map((card: any) => {
+              const days = card.daysUntilDue;
+              const isOverdue = days < 0;
+              const isUrgent = days >= 0 && days <= 3;
+              const color = isOverdue ? '#ffb4ab' : isUrgent ? '#fec931' : '#00e5ff';
+              const bg = isOverdue ? 'bg-[#ffb4ab]/5 border-[#ffb4ab]/30' : isUrgent ? 'bg-[#fec931]/5 border-[#fec931]/30' : 'bg-[#00e5ff]/5 border-[#00e5ff]/20';
+              return (
+                <div key={card._id} className={`p-4 rounded-xl border ${bg} flex flex-col gap-2`}>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <CreditCard size={16} style={{ color }} />
+                      <span className="font-medium text-sm text-white">{card.name}</span>
+                    </div>
+                    <span className="text-xs text-[#849396]">••{card.last6Digits}</span>
+                  </div>
+                  <p className="text-xl font-[Manrope] font-bold" style={{ color }}>{formatINR(card.totalDue)}</p>
+                  <p className="text-xs" style={{ color }}>
+                    {isOverdue ? `Overdue by ${Math.abs(days)} day${Math.abs(days) !== 1 ? 's' : ''}` :
+                     days === 0 ? 'Due Today!' :
+                     `Due in ${days} day${days !== 1 ? 's' : ''} (${card.dueDate}th)`}
+                  </p>
+                </div>
+              );
+            })}
+          </div>
+        </motion.div>
+      )}
+
+      {/* Quick Actions */}
+      <motion.div initial={{y:20, opacity:0}} animate={{y:0, opacity:1}} transition={{delay:1.0}} className="mt-8 md:mt-12 glass-panel p-5 md:p-8 rounded-2xl">
+        <div className="flex flex-col md:flex-row items-center justify-between gap-6">
+          <div>
+            <h3 className="text-lg font-medium text-white mb-2">Quick Actions</h3>
+            <p className="text-sm text-[#bac9cc]">Manage your finances with one click</p>
+          </div>
+          <div className="flex gap-3 w-full md:w-auto">
+            <button onClick={handleAddExpense} className="flex-1 md:flex-none px-6 py-3 bg-gradient-to-r from-[#c3f5ff] to-[#00e5ff] text-[#001f24] rounded-lg font-medium text-sm hover:opacity-90 transition-opacity">
+              + Add Expense
+            </button>
+            <button onClick={handleLoadCards} className="flex-1 md:flex-none px-6 py-3 bg-[#282a2e] text-[#e2e2e8] rounded-lg font-medium text-sm hover:bg-[#333539] transition-colors border border-[#3b494c]">
+              View Cards
+            </button>
+          </div>
+        </div>
+      </motion.div>
         
     </div>
   );

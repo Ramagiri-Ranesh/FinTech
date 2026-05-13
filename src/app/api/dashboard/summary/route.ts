@@ -50,6 +50,24 @@ export async function GET() {
   // Net savings = Income - Expenses
   const netSavings = totalIncome - totalExpense;
 
+  // Upcoming card bills — cards with a dueDate set, sorted by urgency
+  const today = now.getDate();
+  const upcomingCardBills = cards
+    .filter((c: any) => c.dueDate != null && c.totalDue > 0)
+    .map((c: any) => {
+      const daysUntilDue = c.dueDate - today;
+      return {
+        _id: c._id,
+        name: c.name,
+        last6Digits: c.last6Digits,
+        totalDue: c.totalDue,
+        dueDate: c.dueDate,
+        daysUntilDue,
+      };
+    })
+    .filter((c: any) => c.daysUntilDue <= 7) // show within 7 days (including overdue)
+    .sort((a: any, b: any) => a.daysUntilDue - b.daysUntilDue);
+
   // Build last 6 months chart data
   const monthlyData = [];
   for (let i = 5; i >= 0; i--) {
@@ -93,5 +111,6 @@ export async function GET() {
     netSavings: Math.round(netSavings),
     monthlyData,
     cardsList: cards,
+    upcomingCardBills,
   });
 }

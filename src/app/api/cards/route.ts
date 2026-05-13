@@ -51,6 +51,16 @@ export async function PUT(req: Request) {
     }
     return NextResponse.json({ error: "Card not found" }, { status: 404 });
   }
+
+  if (body.action === 'UPDATE_CARD_DUE_DATE' && body.id) {
+    const card = await Card.findOne({ _id: body.id, userId: session.user.id });
+    if (card) {
+      card.dueDate = body.dueDate !== undefined ? Number(body.dueDate) : null;
+      await card.save();
+      return NextResponse.json({ success: true, card });
+    }
+    return NextResponse.json({ error: "Card not found" }, { status: 404 });
+  }
   
   if (body.action === 'PAY_EMI' && body.id) {
     const emi = await EMI.findOne({ _id: body.id, userId: session.user.id });

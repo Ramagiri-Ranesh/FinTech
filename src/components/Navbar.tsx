@@ -13,7 +13,8 @@ import {
   Settings,
   LogOut,
   Menu,
-  X
+  X,
+  FileText
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
@@ -23,6 +24,7 @@ const navItems = [
   { name: "Expenses", href: "/expenses", icon: PieChart },
   { name: "Cards & EMI", href: "/cards", icon: CreditCard },
   { name: "Banks", href: "/banks", icon: Landmark },
+  { name: "Notes", href: "/notes", icon: FileText },
   { name: "Reports", href: "/reports", icon: Settings },
 ];
 

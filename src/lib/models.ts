@@ -35,6 +35,7 @@ const CardSchema = new Schema({
   usedLimit: { type: Number, default: 0 },
   type: { type: String, enum: ['EMI', 'Monthly'], default: 'Monthly' },
   billingDate: { type: Number, default: 1 },
+  dueDate: { type: Number, default: null }, // Day of month (1-31) when bill payment is due
   lastBillingUpdate: { type: Date },
   paymentHistory: [{
     amount: Number,
@@ -89,3 +90,13 @@ export const Card = mongoose.models.Card || mongoose.model('Card', CardSchema);
 export const EMI = mongoose.models.EMI || mongoose.model('EMI', EMISchema);
 export const Bank = mongoose.models.Bank || mongoose.model('Bank', BankSchema);
 export const BankTransaction = mongoose.models.BankTransaction || mongoose.model('BankTransaction', BankTransactionSchema);
+
+const NoteSchema = new Schema({
+  userId: { type: String, required: true },
+  month: { type: Number, required: true }, // 0-11
+  year: { type: Number, required: true },
+  content: { type: String, default: '' },
+  tags: [{ type: String }],
+}, { timestamps: true });
+
+export const Note = mongoose.models.Note || mongoose.model('Note', NoteSchema);
