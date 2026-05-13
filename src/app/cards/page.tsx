@@ -3,49 +3,33 @@
 import { useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Plus, CreditCard, RotateCcw, X, Check, Calendar, DollarSign, Building2, Edit2, Info, TrendingDown, PieChart as PieChartIcon, Bell, AlertTriangle } from "lucide-react";
+import { Plus, CreditCard, RotateCcw, X, Check, Edit2, Info, TrendingDown, PieChart as PieChartIcon, Bell, AlertTriangle } from "lucide-react";
 import { formatINR } from "@/lib/utils";
 import { apiGet, apiPost, apiPut } from "@/lib/api";
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, BarChart, Bar, XAxis, YAxis, Legend } from "recharts";
 
-/** Returns days until due this month (negative = overdue, 0 = due today) */
+// dueDate is stored as day-of-month number (1–31) in MongoDB
 function getDaysUntilDue(dueDate: number | null | undefined): number | null {
-  if (!dueDate) return null;
+  if (!dueDate || dueDate < 1 || dueDate > 31) return null;
   const now = new Date();
-  const todayMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const dueMidnight = new Date(now.getFullYear(), now.getMonth(), dueDate);
-  const diff = Math.floor((dueMidnight.getTime() - todayMidnight.getTime()) / (1000 * 60 * 60 * 24));
-  return diff;
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const due  = new Date(now.getFullYear(), now.getMonth(), dueDate);
+  return Math.floor((due.getTime() - today.getTime()) / 86400000);
 }
 
 function DueDateBadge({ dueDate }: { dueDate: number | null | undefined }) {
   const days = getDaysUntilDue(dueDate);
   if (days === null) return null;
-
   let label = "";
-  let cls = "";
-
-  if (days < 0) {
-    label = `Overdue by ${Math.abs(days)}d`;
-    cls = "bg-[#ffb4ab]/20 text-[#ffb4ab] border-[#ffb4ab]/40";
-  } else if (days === 0) {
-    label = "Due Today!";
-    cls = "bg-[#ffb4ab]/20 text-[#ffb4ab] border-[#ffb4ab]/40 animate-pulse";
-  } else if (days <= 3) {
-    label = `Due in ${days}d`;
-    cls = "bg-[#fec931]/20 text-[#fec931] border-[#fec931]/40";
-  } else if (days <= 7) {
-    label = `Due in ${days}d`;
-    cls = "bg-[#fec931]/10 text-[#fec931] border-[#fec931]/20";
-  } else {
-    label = `Due ${dueDate}th`;
-    cls = "bg-[#00e5ff]/10 text-[#00e5ff] border-[#00e5ff]/20";
-  }
-
+  let cls   = "";
+  if (days < 0)       { label = `Overdue by ${Math.abs(days)}d`; cls = "bg-[#ffb4ab]/20 text-[#ffb4ab] border-[#ffb4ab]/40"; }
+  else if (days === 0){ label = "Due Today!";                     cls = "bg-[#ffb4ab]/20 text-[#ffb4ab] border-[#ffb4ab]/40 animate-pulse"; }
+  else if (days <= 3) { label = `Due in ${days}d`;               cls = "bg-[#fec931]/20 text-[#fec931] border-[#fec931]/40"; }
+  else if (days <= 7) { label = `Due in ${days}d`;               cls = "bg-[#fec931]/10 text-[#fec931] border-[#fec931]/20"; }
+  else                { label = `Due on ${dueDate}th`;           cls = "bg-[#00e5ff]/10 text-[#00e5ff] border-[#00e5ff]/20"; }
   return (
     <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium border ${cls}`}>
-      <Bell size={10} />
-      {label}
+      <Bell size={10} />{label}
     </span>
   );
 }
@@ -70,14 +54,14 @@ export default function CardsPage() {
 
   // Edit EMI Due Date Modal
   const [editEmiModal, setEditEmiModal] = useState<any>(null);
-  const [editEmiDueDate, setEditEmiDueDate] = useState("");
+  const [editEmiDueDay, setEditEmiDueDay] = useState("");   // plain number 1-31
 
   // Edit Card Due Modal
   const [editCardModal, setEditCardModal] = useState<any>(null);
   const [editDueAmount, setEditDueAmount] = useState("");
   const [editCreditLimit, setEditCreditLimit] = useState("");
   const [editUsedLimit, setEditUsedLimit] = useState("");
-  const [editDueDate, setEditDueDate] = useState("");
+  const [editCardDueDay, setEditCardDueDay] = useState("");  // plain number 1-31
 
   // Form State
   const [type, setType] = useState("Monthly");
@@ -88,8 +72,8 @@ export default function CardsPage() {
   const [usedLimit, setUsedLimit] = useState("");
   const [numberOfMonths, setNumberOfMonths] = useState("");
   const [monthlyAmount, setMonthlyAmount] = useState("");
-  const [dueDate, setDueDate] = useState("");
-  const [emiDueDate, setEmiDueDate] = useState("");
+  const [cardDueDay, setCardDueDay] = useState("");    // plain number 1-31 for new card
+  const [emiDueDay, setEmiDueDay] = useState("");      // plain number 1-31 for new EMI
 
 
   const fetchData = async () => {
@@ -118,12 +102,11 @@ export default function CardsPage() {
     if (!name || type === "Monthly" && last6Digits.length !== 6) return;
 
     const payload = type === "Monthly"
-      ? { type: "Monthly", name, last6Digits, totalDue: Number(totalDue), creditLimit: Number(creditLimit), usedLimit: Number(usedLimit), dueDate: dueDate ? parseInt(dueDate.split("-")[2], 10) : null }
-      : { type: "EMI", name, totalAmount: Number(totalDue), numberOfMonths: Number(numberOfMonths), monthlyAmount: Number(monthlyAmount), remainingMonths: Number(numberOfMonths), paidMonths: 0, currentMonth: 1, dueDate: emiDueDate ? parseInt(emiDueDate.split("-")[2], 10) : null };
+      ? { type: "Monthly", name, last6Digits, totalDue: Number(totalDue), creditLimit: Number(creditLimit), usedLimit: Number(usedLimit), dueDate: cardDueDay ? Number(cardDueDay) : null }
+      : { type: "EMI", name, totalAmount: Number(totalDue), numberOfMonths: Number(numberOfMonths), monthlyAmount: Number(monthlyAmount), remainingMonths: Number(numberOfMonths), paidMonths: 0, currentMonth: 1, dueDate: emiDueDay ? Number(emiDueDay) : null };
 
     await apiPost("/api/cards", payload);
-
-    setName(""); setLast6Digits(""); setTotalDue(""); setCreditLimit(""); setUsedLimit(""); setNumberOfMonths(""); setMonthlyAmount(""); setDueDate(""); setEmiDueDate("");
+    setName(""); setLast6Digits(""); setTotalDue(""); setCreditLimit(""); setUsedLimit(""); setNumberOfMonths(""); setMonthlyAmount(""); setCardDueDay(""); setEmiDueDay("");
     fetchData();
   };
 
@@ -166,19 +149,14 @@ export default function CardsPage() {
 
   const handleUpdateCardDue = async () => {
     if (!editCardModal) return;
-
-    // Parse day directly from YYYY-MM-DD string — avoids UTC timezone shift
-    const parsedDay = editDueDate ? parseInt(editDueDate.split("-")[2], 10) : null;
-
     await apiPut("/api/cards", {
       action: 'UPDATE_CARD_DUE',
       id: editCardModal._id,
       totalDue: Number(editDueAmount),
       creditLimit: Number(editCreditLimit),
       usedLimit: Number(editUsedLimit),
-      dueDate: parsedDay,
+      dueDate: editCardDueDay ? Number(editCardDueDay) : null,
     });
-
     setEditCardModal(null);
     fetchData();
   };
@@ -188,16 +166,7 @@ export default function CardsPage() {
     setEditDueAmount(card.totalDue.toString());
     setEditCreditLimit((card.creditLimit || 0).toString());
     setEditUsedLimit((card.usedLimit || 0).toString());
-    // Pre-fill date picker: use the stored day in the current month
-    if (card.dueDate) {
-      const now = new Date();
-      const y = now.getFullYear();
-      const m = String(now.getMonth() + 1).padStart(2, '0');
-      const d = String(card.dueDate).padStart(2, '0');
-      setEditDueDate(`${y}-${m}-${d}`);
-    } else {
-      setEditDueDate("");
-    }
+    setEditCardDueDay(card.dueDate ? String(card.dueDate) : "");
   };
 
   const openEmiDetailModal = (emi: any) => {
@@ -206,15 +175,7 @@ export default function CardsPage() {
 
   const openEditEmiModal = (emi: any) => {
     setEditEmiModal(emi);
-    if (emi.dueDate) {
-      const now = new Date();
-      const y = now.getFullYear();
-      const m = String(now.getMonth() + 1).padStart(2, '0');
-      const d = String(emi.dueDate).padStart(2, '0');
-      setEditEmiDueDate(`${y}-${m}-${d}`);
-    } else {
-      setEditEmiDueDate("");
-    }
+    setEditEmiDueDay(emi.dueDate ? String(emi.dueDate) : "");
   };
 
   const handleUpdateEmiDueDate = async () => {
@@ -222,7 +183,7 @@ export default function CardsPage() {
     await apiPut("/api/cards", {
       action: 'UPDATE_EMI_DUE_DATE',
       id: editEmiModal._id,
-      dueDate: editEmiDueDate ? parseInt(editEmiDueDate.split("-")[2], 10) : null,
+      dueDate: editEmiDueDay ? Number(editEmiDueDay) : null,
     });
     setEditEmiModal(null);
     fetchData();
@@ -354,30 +315,36 @@ export default function CardsPage() {
             {type === "Monthly" && (
               <div>
                 <label className="block text-xs text-[#bac9cc] mb-1 flex items-center gap-1">
-                  <Bell size={11} /> Bill Due Date — optional
+                  <Bell size={11} /> Bill Due Date (day of month) — optional
                 </label>
                 <input
-                  type="date"
-                  value={dueDate}
-                  onChange={e => setDueDate(e.target.value)}
-                  className="w-full bg-[#0c0e12] border border-[#3b494c] rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-[#fec931] text-white [color-scheme:dark]"
+                  type="number"
+                  min={1}
+                  max={31}
+                  value={cardDueDay}
+                  onChange={e => setCardDueDay(e.target.value)}
+                  placeholder="e.g. 15"
+                  className="w-full bg-[#0c0e12] border border-[#3b494c] rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-[#fec931] text-white placeholder:text-[#3b494c]"
                 />
-                <p className="text-xs text-[#849396] mt-1">You'll see an alert when the due date is within 5 days.</p>
+                <p className="text-xs text-[#849396] mt-1">Enter the day (1–31). Alert shows when within 5 days.</p>
               </div>
             )}
 
             {type === "EMI" && (
               <div>
                 <label className="block text-xs text-[#bac9cc] mb-1 flex items-center gap-1">
-                  <Bell size={11} /> EMI Due Date — optional
+                  <Bell size={11} /> EMI Due Date (day of month) — optional
                 </label>
                 <input
-                  type="date"
-                  value={emiDueDate}
-                  onChange={e => setEmiDueDate(e.target.value)}
-                  className="w-full bg-[#0c0e12] border border-[#3b494c] rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-[#fec931] text-white [color-scheme:dark]"
+                  type="number"
+                  min={1}
+                  max={31}
+                  value={emiDueDay}
+                  onChange={e => setEmiDueDay(e.target.value)}
+                  placeholder="e.g. 5"
+                  className="w-full bg-[#0c0e12] border border-[#3b494c] rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-[#fec931] text-white placeholder:text-[#3b494c]"
                 />
-                <p className="text-xs text-[#849396] mt-1">You'll see an alert when the EMI due date is within 5 days.</p>
+                <p className="text-xs text-[#849396] mt-1">Enter the day (1–31). Alert shows when within 5 days.</p>
               </div>
             )}
 
@@ -777,16 +744,19 @@ export default function CardsPage() {
               <div className="space-y-6">
                 <div>
                   <label className="block text-xs font-semibold text-[#849396] uppercase tracking-widest mb-3 flex items-center gap-1">
-                    <Bell size={12} /> EMI Due Date
+                    <Bell size={12} /> EMI Due Date (day of month)
                   </label>
                   <input
-                    type="date"
+                    type="number"
                     autoFocus
-                    value={editEmiDueDate}
-                    onChange={e => setEditEmiDueDate(e.target.value)}
-                    className="w-full bg-[#0c0e12] border border-[#fec931] rounded-xl px-4 py-4 text-lg focus:outline-none text-white [color-scheme:dark]"
+                    min={1}
+                    max={31}
+                    value={editEmiDueDay}
+                    onChange={e => setEditEmiDueDay(e.target.value)}
+                    placeholder="e.g. 5 (leave blank to remove)"
+                    className="w-full bg-[#0c0e12] border border-[#fec931] rounded-xl px-4 py-4 text-lg focus:outline-none text-white placeholder:text-[#3b494c]"
                   />
-                  <p className="text-xs text-[#849396] mt-2">Alert shown when due date is within 5 days. Leave blank to remove.</p>
+                  <p className="text-xs text-[#849396] mt-2">Enter day 1–31. Alert shown when within 5 days.</p>
                 </div>
                 <button onClick={handleUpdateEmiDueDate} className="w-full bg-gradient-to-r from-[#fec931] to-[#ffb700] text-[#1a1c20] font-bold py-4 rounded-xl hover:opacity-90 flex items-center justify-center gap-2 shadow-[0_0_30px_rgba(254,201,49,0.3)]">
                   <Check size={20} /> Save Due Date
@@ -855,15 +825,18 @@ export default function CardsPage() {
 
                 <div>
                   <label className="block text-xs font-semibold text-[#849396] uppercase tracking-widest mb-3 flex items-center gap-1">
-                    <Bell size={12} /> Bill Due Date
+                    <Bell size={12} /> Bill Due Date (day of month)
                   </label>
                   <input
-                    type="date"
-                    value={editDueDate}
-                    onChange={e => setEditDueDate(e.target.value)}
-                    className="w-full bg-[#0c0e12] border border-[#3b494c] rounded-xl px-4 py-4 text-lg focus:outline-none focus:border-[#fec931] text-white [color-scheme:dark]"
+                    type="number"
+                    min={1}
+                    max={31}
+                    value={editCardDueDay}
+                    onChange={e => setEditCardDueDay(e.target.value)}
+                    placeholder="e.g. 15 (leave blank to remove)"
+                    className="w-full bg-[#0c0e12] border border-[#3b494c] rounded-xl px-4 py-4 text-lg focus:outline-none focus:border-[#fec931] text-white placeholder:text-[#3b494c]"
                   />
-                  <p className="text-xs text-[#849396] mt-2">Alert shown when due date is within 5 days.</p>
+                  <p className="text-xs text-[#849396] mt-2">Enter day 1–31. Alert shown when within 5 days.</p>
                 </div>
 
                 <button onClick={handleUpdateCardDue} className="w-full bg-gradient-to-r from-[#00e5ff] to-[#00b4c8] text-[#001f24] font-bold py-4 rounded-xl hover:opacity-90 flex items-center justify-center gap-2 shadow-[0_0_30px_rgba(0,229,255,0.3)]">
