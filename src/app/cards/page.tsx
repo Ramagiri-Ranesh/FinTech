@@ -118,8 +118,8 @@ export default function CardsPage() {
     if (!name || type === "Monthly" && last6Digits.length !== 6) return;
 
     const payload = type === "Monthly"
-      ? { type: "Monthly", name, last6Digits, totalDue: Number(totalDue), creditLimit: Number(creditLimit), usedLimit: Number(usedLimit), dueDate: dueDate ? new Date(dueDate).getDate() : null }
-      : { type: "EMI", name, totalAmount: Number(totalDue), numberOfMonths: Number(numberOfMonths), monthlyAmount: Number(monthlyAmount), remainingMonths: Number(numberOfMonths), paidMonths: 0, currentMonth: 1, dueDate: emiDueDate ? new Date(emiDueDate).getDate() : null };
+      ? { type: "Monthly", name, last6Digits, totalDue: Number(totalDue), creditLimit: Number(creditLimit), usedLimit: Number(usedLimit), dueDate: dueDate ? parseInt(dueDate.split("-")[2], 10) : null }
+      : { type: "EMI", name, totalAmount: Number(totalDue), numberOfMonths: Number(numberOfMonths), monthlyAmount: Number(monthlyAmount), remainingMonths: Number(numberOfMonths), paidMonths: 0, currentMonth: 1, dueDate: emiDueDate ? parseInt(emiDueDate.split("-")[2], 10) : null };
 
     await apiPost("/api/cards", payload);
 
@@ -167,14 +167,17 @@ export default function CardsPage() {
   const handleUpdateCardDue = async () => {
     if (!editCardModal) return;
 
-    // Single API call — pass dueDate along with billing details
+    // Parse day from date string directly to avoid UTC timezone shift
+    // "2026-05-15" → day = 15, regardless of local timezone
+    const parsedDay = editDueDate ? parseInt(editDueDate.split("-")[2], 10) : null;
+
     await apiPut("/api/cards", {
       action: 'UPDATE_CARD_DUE',
       id: editCardModal._id,
       totalDue: Number(editDueAmount),
       creditLimit: Number(editCreditLimit),
       usedLimit: Number(editUsedLimit),
-      dueDate: editDueDate ? new Date(editDueDate).getDate() : null,
+      dueDate: parsedDay || null,
     });
 
     setEditCardModal(null);
@@ -220,7 +223,7 @@ export default function CardsPage() {
     await apiPut("/api/cards", {
       action: 'UPDATE_EMI_DUE_DATE',
       id: editEmiModal._id,
-      dueDate: editEmiDueDate ? new Date(editEmiDueDate).getDate() : null,
+      dueDate: editEmiDueDate ? parseInt(editEmiDueDate.split("-")[2], 10) : null,
     });
     setEditEmiModal(null);
     fetchData();
