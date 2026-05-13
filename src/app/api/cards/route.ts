@@ -40,38 +40,42 @@ export async function PUT(req: Request) {
   await connectToDatabase();
   
   if (body.action === 'UPDATE_CARD_DUE' && body.id) {
-    const card = await Card.findOne({ _id: body.id, userId: session.user.id });
-    if (card) {
-      card.totalDue = Number(body.totalDue);
-      if (body.usedLimit !== undefined) card.usedLimit = Number(body.usedLimit);
-      if (body.creditLimit !== undefined) card.creditLimit = Number(body.creditLimit);
-      // Update dueDate in the same call if provided
-      if (body.dueDate !== undefined) card.dueDate = body.dueDate ? Number(body.dueDate) : null;
-      card.lastBillingUpdate = new Date();
-      await card.save();
-      return NextResponse.json({ success: true, card });
-    }
-    return NextResponse.json({ error: "Card not found" }, { status: 404 });
+    const updateFields: any = {
+      totalDue: Number(body.totalDue),
+      lastBillingUpdate: new Date(),
+    };
+    if (body.usedLimit !== undefined) updateFields.usedLimit = Number(body.usedLimit);
+    if (body.creditLimit !== undefined) updateFields.creditLimit = Number(body.creditLimit);
+    // Always write dueDate — use $set so it persists even if schema cache is stale
+    updateFields.dueDate = (body.dueDate != null && body.dueDate !== '') ? Number(body.dueDate) : null;
+
+    const card = await Card.findOneAndUpdate(
+      { _id: body.id, userId: session.user.id },
+      { $set: updateFields },
+      { new: true }
+    );
+    if (!card) return NextResponse.json({ error: "Card not found" }, { status: 404 });
+    return NextResponse.json({ success: true, card });
   }
 
   if (body.action === 'UPDATE_CARD_DUE_DATE' && body.id) {
-    const card = await Card.findOne({ _id: body.id, userId: session.user.id });
-    if (card) {
-      card.dueDate = body.dueDate !== undefined ? (body.dueDate ? Number(body.dueDate) : null) : card.dueDate;
-      await card.save();
-      return NextResponse.json({ success: true, card });
-    }
-    return NextResponse.json({ error: "Card not found" }, { status: 404 });
+    const card = await Card.findOneAndUpdate(
+      { _id: body.id, userId: session.user.id },
+      { $set: { dueDate: (body.dueDate != null && body.dueDate !== '') ? Number(body.dueDate) : null } },
+      { new: true }
+    );
+    if (!card) return NextResponse.json({ error: "Card not found" }, { status: 404 });
+    return NextResponse.json({ success: true, card });
   }
 
   if (body.action === 'UPDATE_EMI_DUE_DATE' && body.id) {
-    const emi = await EMI.findOne({ _id: body.id, userId: session.user.id });
-    if (emi) {
-      emi.dueDate = body.dueDate !== undefined ? (body.dueDate ? Number(body.dueDate) : null) : emi.dueDate;
-      await emi.save();
-      return NextResponse.json({ success: true, emi });
-    }
-    return NextResponse.json({ error: "EMI not found" }, { status: 404 });
+    const emi = await EMI.findOneAndUpdate(
+      { _id: body.id, userId: session.user.id },
+      { $set: { dueDate: (body.dueDate != null && body.dueDate !== '') ? Number(body.dueDate) : null } },
+      { new: true }
+    );
+    if (!emi) return NextResponse.json({ error: "EMI not found" }, { status: 404 });
+    return NextResponse.json({ success: true, emi });
   }
   
   if (body.action === 'PAY_EMI' && body.id) {

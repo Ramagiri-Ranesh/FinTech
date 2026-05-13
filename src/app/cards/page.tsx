@@ -167,8 +167,7 @@ export default function CardsPage() {
   const handleUpdateCardDue = async () => {
     if (!editCardModal) return;
 
-    // Parse day from date string directly to avoid UTC timezone shift
-    // "2026-05-15" → day = 15, regardless of local timezone
+    // Parse day directly from YYYY-MM-DD string — avoids UTC timezone shift
     const parsedDay = editDueDate ? parseInt(editDueDate.split("-")[2], 10) : null;
 
     await apiPut("/api/cards", {
@@ -177,7 +176,7 @@ export default function CardsPage() {
       totalDue: Number(editDueAmount),
       creditLimit: Number(editCreditLimit),
       usedLimit: Number(editUsedLimit),
-      dueDate: parsedDay || null,
+      dueDate: parsedDay,
     });
 
     setEditCardModal(null);
