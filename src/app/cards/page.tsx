@@ -112,7 +112,7 @@ export default function CardsPage() {
     if (!name || type === "Monthly" && last6Digits.length !== 6) return;
 
     const payload = type === "Monthly"
-      ? { type: "Monthly", name, last6Digits, totalDue: Number(totalDue), creditLimit: Number(creditLimit), usedLimit: Number(usedLimit), dueDate: dueDate ? Number(dueDate) : null }
+      ? { type: "Monthly", name, last6Digits, totalDue: Number(totalDue), creditLimit: Number(creditLimit), usedLimit: Number(usedLimit), dueDate: dueDate ? new Date(dueDate).getDate() : null }
       : { type: "EMI", name, totalAmount: Number(totalDue), numberOfMonths: Number(numberOfMonths), monthlyAmount: Number(monthlyAmount), remainingMonths: Number(numberOfMonths), paidMonths: 0, currentMonth: 1 };
 
     await apiPost("/api/cards", payload);
@@ -173,7 +173,7 @@ export default function CardsPage() {
     await apiPut("/api/cards", {
       action: 'UPDATE_CARD_DUE_DATE',
       id: editCardModal._id,
-      dueDate: editDueDate ? Number(editDueDate) : null,
+      dueDate: editDueDate ? new Date(editDueDate).getDate() : null,
     });
 
     setEditCardModal(null);
@@ -185,7 +185,16 @@ export default function CardsPage() {
     setEditDueAmount(card.totalDue.toString());
     setEditCreditLimit((card.creditLimit || 0).toString());
     setEditUsedLimit((card.usedLimit || 0).toString());
-    setEditDueDate(card.dueDate ? card.dueDate.toString() : "");
+    // Pre-fill date picker: use the stored day in the current month
+    if (card.dueDate) {
+      const now = new Date();
+      const y = now.getFullYear();
+      const m = String(now.getMonth() + 1).padStart(2, '0');
+      const d = String(card.dueDate).padStart(2, '0');
+      setEditDueDate(`${y}-${m}-${d}`);
+    } else {
+      setEditDueDate("");
+    }
   };
 
   const openEmiDetailModal = (emi: any) => {
@@ -300,16 +309,13 @@ export default function CardsPage() {
             {type === "Monthly" && (
               <div>
                 <label className="block text-xs text-[#bac9cc] mb-1 flex items-center gap-1">
-                  <Bell size={11} /> Bill Due Date (day of month) — optional
+                  <Bell size={11} /> Bill Due Date — optional
                 </label>
                 <input
-                  type="number"
-                  min={1}
-                  max={31}
+                  type="date"
                   value={dueDate}
                   onChange={e => setDueDate(e.target.value)}
-                  placeholder="e.g. 15 (for 15th of each month)"
-                  className="w-full bg-[#0c0e12] border border-[#3b494c] rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-[#fec931] text-white placeholder:text-[#3b494c]"
+                  className="w-full bg-[#0c0e12] border border-[#3b494c] rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-[#fec931] text-white [color-scheme:dark]"
                 />
                 <p className="text-xs text-[#849396] mt-1">You'll see an alert when the due date is within 5 days.</p>
               </div>
@@ -735,16 +741,13 @@ export default function CardsPage() {
 
                 <div>
                   <label className="block text-xs font-semibold text-[#849396] uppercase tracking-widest mb-3 flex items-center gap-1">
-                    <Bell size={12} /> Bill Due Date (Day of Month)
+                    <Bell size={12} /> Bill Due Date
                   </label>
                   <input
-                    type="number"
-                    min={1}
-                    max={31}
+                    type="date"
                     value={editDueDate}
                     onChange={e => setEditDueDate(e.target.value)}
-                    placeholder="e.g. 15 (leave blank to remove)"
-                    className="w-full bg-[#0c0e12] border border-[#3b494c] rounded-xl px-4 py-4 text-lg focus:outline-none focus:border-[#fec931] text-white placeholder:text-[#3b494c]"
+                    className="w-full bg-[#0c0e12] border border-[#3b494c] rounded-xl px-4 py-4 text-lg focus:outline-none focus:border-[#fec931] text-white [color-scheme:dark]"
                   />
                   <p className="text-xs text-[#849396] mt-2">Alert shown when due date is within 5 days.</p>
                 </div>
