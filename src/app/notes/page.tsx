@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { useSession } from "next-auth/react";
 import { motion } from "framer-motion";
-import { ChevronLeft, ChevronRight, Save, Trash2, Tag, X, FileText } from "lucide-react";
+import { ChevronLeft, ChevronRight, Save, Trash2, Tag, X, FileText, Cloud } from "lucide-react";
 import { apiGet, apiPost, apiDelete } from "@/lib/api";
 
 const MONTH_NAMES = [
@@ -30,27 +30,107 @@ export default function NotesPage() {
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [hasNote, setHasNote] = useState(false);
+  const [isDirtyState, setIsDirtyState] = useState(false); // for UI badge only
 
-  const fetchNote = useCallback(async () => {
+  // Track unsaved local changes — prevents fetch from overwriting typed content
+  const isDirty = useRef(false);
+  // Keep latest content/tags accessible inside event listeners without stale closure
+  const contentRef = useRef(content);
+  const tagsRef = useRef(tags);
+  const viewMonthRef = useRef(viewMonth);
+  const viewYearRef = useRef(viewYear);
+  const sessionRef = useRef(session);
+
+  useEffect(() => { contentRef.current = content; }, [content]);
+  useEffect(() => { tagsRef.current = tags; }, [tags]);
+  useEffect(() => { viewMonthRef.current = viewMonth; }, [viewMonth]);
+  useEffect(() => { viewYearRef.current = viewYear; }, [viewYear]);
+  useEffect(() => { sessionRef.current = session; }, [session]);
+
+  const fetchNote = useCallback(async (force = false) => {
+    // Don't overwrite unsaved local edits unless explicitly forced (month change)
+    if (isDirty.current && !force) return;
     setLoading(true);
     try {
-      const data = await apiGet(`/api/notes?month=${viewMonth}&year=${viewYear}`);
+      const data = await apiGet(`/api/notes?month=${viewMonthRef.current}&year=${viewYearRef.current}`);
       setContent(data.content || "");
       setTags(data.tags || []);
       setHasNote(!!(data.content || (data.tags && data.tags.length > 0)));
+      isDirty.current = false;
+      setIsDirtyState(false);
     } catch {
       setContent("");
       setTags([]);
       setHasNote(false);
     }
     setLoading(false);
-  }, [viewMonth, viewYear]);
+  }, []);
 
+  // Initial load and month/year change — always force fetch
   useEffect(() => {
-    if (session) fetchNote();
-  }, [session, fetchNote]);
+    if (session) fetchNote(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session, viewMonth, viewYear]);
+
+  // Auto-save when user switches away from the app (visibilitychange hidden)
+  // Re-fetch only if no dirty changes when coming back
+  useEffect(() => {
+    const handleVisibilityChange = async () => {
+      if (!sessionRef.current) return;
+
+      if (document.visibilityState === "hidden") {
+        // App going to background — auto-save if there are unsaved changes
+        if (isDirty.current) {
+          try {
+            await apiPost("/api/notes", {
+              month: viewMonthRef.current,
+              year: viewYearRef.current,
+              content: contentRef.current,
+              tags: tagsRef.current,
+            });
+            isDirty.current = false;
+          } catch {
+            // Silently fail — content stays in state, user can manually save
+          }
+        }
+      }
+      // When coming back (visible), don't re-fetch — content is already in state
+      // and isDirty is false after auto-save, so nothing gets overwritten
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => document.removeEventListener("visibilitychange", handleVisibilityChange);
+  }, []);
+
+  // Also save on page unload (browser close / navigation)
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+      if (isDirty.current && sessionRef.current) {
+        // Use sendBeacon for reliable delivery on unload
+        const payload = JSON.stringify({
+          month: viewMonthRef.current,
+          year: viewYearRef.current,
+          content: contentRef.current,
+          tags: tagsRef.current,
+        });
+        navigator.sendBeacon?.("/api/notes", new Blob([payload], { type: "application/json" }));
+      }
+    };
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, []);
 
   const navigateMonth = (dir: number) => {
+    // If dirty, auto-save before switching month
+    if (isDirty.current) {
+      apiPost("/api/notes", {
+        month: viewMonthRef.current,
+        year: viewYearRef.current,
+        content: contentRef.current,
+        tags: tagsRef.current,
+      }).catch(() => {});
+      isDirty.current = false;
+    }
     let m = viewMonth + dir;
     let y = viewYear;
     if (m < 0) { m = 11; y -= 1; }
@@ -62,11 +142,20 @@ export default function NotesPage() {
   const isCurrentMonth =
     viewMonth === now.getMonth() && viewYear === now.getFullYear();
 
+  const handleContentChange = (val: string) => {
+    setContent(val);
+    isDirty.current = true;
+    setIsDirtyState(true);
+    setSaved(false);
+  };
+
   const handleSave = async () => {
     setSaving(true);
     try {
       await apiPost("/api/notes", { month: viewMonth, year: viewYear, content, tags });
       setHasNote(!!(content || tags.length > 0));
+      isDirty.current = false;
+      setIsDirtyState(false);
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
     } catch (e) {
@@ -81,18 +170,26 @@ export default function NotesPage() {
     setContent("");
     setTags([]);
     setHasNote(false);
+    isDirty.current = false;
+    setIsDirtyState(false);
   };
 
   const addTag = (tag: string) => {
     const trimmed = tag.trim();
     if (trimmed && !tags.includes(trimmed)) {
       setTags((prev) => [...prev, trimmed]);
+      isDirty.current = true;
+      setIsDirtyState(true);
+      setSaved(false);
     }
     setTagInput("");
   };
 
   const removeTag = (tag: string) => {
     setTags((prev) => prev.filter((t) => t !== tag));
+    isDirty.current = true;
+    setIsDirtyState(true);
+    setSaved(false);
   };
 
   const handleTagKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -154,16 +251,23 @@ export default function NotesPage() {
               <h2 className="text-base font-semibold text-white">
                 Notes for {MONTH_NAMES[viewMonth]} {viewYear}
               </h2>
-              {hasNote && (
-                <span className="text-xs px-2 py-1 rounded-full bg-[#00e5ff]/10 text-[#00e5ff] border border-[#00e5ff]/20">
-                  Saved
-                </span>
-              )}
+              <div className="flex items-center gap-2">
+                {isDirtyState && (
+                  <span className="text-xs px-2 py-1 rounded-full bg-[#fec931]/10 text-[#fec931] border border-[#fec931]/20 flex items-center gap-1">
+                    <Cloud size={10} /> Unsaved
+                  </span>
+                )}
+                {hasNote && !isDirtyState && (
+                  <span className="text-xs px-2 py-1 rounded-full bg-[#00e5ff]/10 text-[#00e5ff] border border-[#00e5ff]/20">
+                    Saved
+                  </span>
+                )}
+              </div>
             </div>
 
             <textarea
               value={content}
-              onChange={(e) => setContent(e.target.value)}
+              onChange={(e) => handleContentChange(e.target.value)}
               placeholder={`Write your financial notes for ${MONTH_NAMES[viewMonth]}...\n\nExamples:\n• Budget target: ₹30,000\n• Avoid dining out this month\n• Pay credit card by 15th\n• Review SIP investments`}
               rows={14}
               className="w-full bg-[#0c0e12] border border-[#3b494c] rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-[#00e5ff] text-white placeholder:text-[#3b494c] resize-none leading-relaxed transition-colors"
